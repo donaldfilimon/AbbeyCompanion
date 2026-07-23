@@ -1,0 +1,35 @@
+import SwiftUI
+
+struct AboutView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Abbey Companion")
+                .font(.title.bold())
+            Text("Swift 6.4 · macOS 26+ · AbbeyCore + SwiftUI")
+                .foregroundStyle(.secondary)
+            Text("Standalone companion for Abbey Bot. Local SwiftData only — no Discord gateway, no Postgres sync.")
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            Group {
+                labeled("Intents", "greeting · question · memory · rep · persona · mod · commands")
+                labeled("Inference", "deterministicFloor · onDevice · remote OpenAI-compatible")
+                labeled("DQN", "18→8 projection · ignore / reply / escalate")
+                labeled("Handoff", "JSON export/import (MirrorExportDocument)")
+            }
+            .font(.caption)
+
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .frame(width: 420, height: 280)
+    }
+
+    private func labeled(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(title).bold().frame(width: 72, alignment: .leading)
+            Text(value).foregroundStyle(.secondary)
+        }
+    }
+}
