@@ -15,7 +15,9 @@ struct DashboardView: View {
     @State private var draftGuildId = "dev-guild"
     @State private var draftAuthorId = "donald"
     @State private var draftContent = ""
+    @State private var batchTranscript = ""
     @State private var isIngesting = false
+    @State private var isBatching = false
     @State private var mirrorSnapshotText = ""
     @State private var ioStatus = ""
 
@@ -36,6 +38,7 @@ struct DashboardView: View {
                     MetricCard(title: "Rep events", value: "\(engine.metrics.reputationEventsThisSession)")
                     MetricCard(title: "Inference calls", value: "\(engine.metrics.inferenceCallsByMode.values.reduce(0, +))")
                     MetricCard(title: "DQN steps", value: "\(engine.dqnStepCount)")
+                    MetricCard(title: "DQN buffer", value: "\(engine.dqnExperienceCount)")
                     MetricCard(title: "Activity log", value: "\(logs.count)")
                 }
 
@@ -74,6 +77,7 @@ struct DashboardView: View {
 
                 Divider()
                 ingestForm
+                batchReplayForm
 
                 HStack(spacing: 12) {
                     if let intent = engine.lastIntent {
@@ -210,6 +214,38 @@ struct DashboardView: View {
         .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
     }
 
+    private var batchReplayForm: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Batch transcript replay").font(.headline)
+            Text("One message per line. Lines starting with # are skipped.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextEditor(text: $batchTranscript)
+                .font(.body.monospaced())
+                .frame(minHeight: 88, maxHeight: 160)
+                .border(.quaternary)
+
+            HStack {
+                Button {
+                    Task { await replayBatch() }
+                } label: {
+                    if isBatching {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Replay transcript")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(
+                    batchTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBatching
+                )
+                Spacer()
+            }
+        }
+        .padding(16)
+        .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     private func ingest() async {
         isIngesting = true
         defer { isIngesting = false }
@@ -220,6 +256,19 @@ struct DashboardView: View {
             authorId: draftAuthorId
         )
         draftContent = ""
+        if engine.config.operatingMode == .mirror { refreshMirrorSnapshot() }
+    }
+
+    private func replayBatch() async {
+        isBatching = true
+        defer { isBatching = false }
+        let count = await engine.ingestBatch(
+            transcript: batchTranscript,
+            channelId: draftChannelId,
+            guildId: draftGuildId,
+            authorId: draftAuthorId
+        )
+        ioStatus = "Replayed \(count) transcript line(s)."
         if engine.config.operatingMode == .mirror { refreshMirrorSnapshot() }
     }
 

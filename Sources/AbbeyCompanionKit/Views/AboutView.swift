@@ -17,8 +17,8 @@ package struct AboutView: View {
             Group {
                 labeled("Intents", "greeting · question · memory · rep · persona · mod · commands")
                 labeled("Inference", "deterministicFloor · onDevice · remote OpenAI-compatible")
-                labeled("DQN", "18→8 projection · ignore / reply / escalate")
-                labeled("Handoff", "JSON export/import (MirrorExportDocument)")
+                labeled("DQN", "18→8 · ignore/reply/escalate · checkpoint + 👍/👎 rewards")
+                labeled("Handoff", "JSON export/import · batch transcript replay")
             }
             .font(.caption)
 

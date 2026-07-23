@@ -82,6 +82,48 @@ public struct NeuralNetwork: Sendable {
         return activation
     }
 
+    /// Flattened, Codable-friendly snapshot of weights/biases for disk persistence.
+    public struct Snapshot: Codable, Sendable, Equatable {
+        public var topology: [Int]
+        public var weights: [[[Float]]]
+        public var biases: [[Float]]
+
+        public init(topology: [Int], weights: [[[Float]]], biases: [[Float]]) {
+            self.topology = topology
+            self.weights = weights
+            self.biases = biases
+        }
+    }
+
+    public func makeSnapshot() -> Snapshot {
+        Snapshot(
+            topology: topology,
+            weights: weights.map { layer in layer.map { weight in (0..<8).map { weight[$0] } } },
+            biases: biases
+        )
+    }
+
+    public init(snapshot: Snapshot) throws {
+        guard snapshot.weights.count == snapshot.biases.count,
+              snapshot.weights.count == max(0, snapshot.topology.count - 1)
+        else {
+            throw CheckpointError.topologyMismatch
+        }
+        for (layerWeights, layerBiases) in zip(snapshot.weights, snapshot.biases) {
+            guard layerWeights.count == layerBiases.count else {
+                throw CheckpointError.topologyMismatch
+            }
+            for neuron in layerWeights where neuron.count != 8 {
+                throw CheckpointError.laneCount
+            }
+        }
+        self.topology = snapshot.topology
+        self.weights = snapshot.weights.map { layer in
+            layer.map { SIMD8<Float>($0) }
+        }
+        self.biases = snapshot.biases
+    }
+
     /// Backprop with gradient clipping (±1.0). Mutates in place, so callers hold a
     /// `var NeuralNetwork` (DQNAgent stores `online`/`target` as `var` properties).
     public mutating func train(input: [Float], target: [Float], learningRate: Float = 0.001) {
@@ -144,6 +186,12 @@ public struct NeuralNetwork: Sendable {
         guard sum > 0 else { return logits.map { _ in 1.0 / Float(max(logits.count, 1)) } }
         return exponentials.map { $0 / sum }
     }
+}
+
+public enum CheckpointError: Error, Sendable, Equatable {
+    case topologyMismatch
+    case laneCount
+    case decodingFailed(String)
 }
 
 /// Deterministic, seedable PRNG so network initialization is reproducible in tests

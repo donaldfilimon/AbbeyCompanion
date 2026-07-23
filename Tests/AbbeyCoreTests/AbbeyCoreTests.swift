@@ -130,4 +130,23 @@ struct AbbeyCoreTests {
         }
         #expect(extract("remember I ship on Fridays") == "I ship on Fridays")
     }
+
+    @Test("NeuralNetwork snapshot round-trips")
+    func networkSnapshotRoundTrip() throws {
+        let net = NeuralNetwork(topology: [8, 4, 3], seed: 7)
+        let restored = try NeuralNetwork(snapshot: net.makeSnapshot())
+        #expect(restored.topology == net.topology)
+        #expect(restored.makeSnapshot() == net.makeSnapshot())
+    }
+
+    @Test("DQNAgent checkpoint round-trips")
+    func dqnCheckpointRoundTrip() async throws {
+        let agent = DQNAgent(topology: [8, 4, 3], seed: 9)
+        _ = await agent.selectAction(state: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
+        let checkpoint = await agent.exportCheckpoint()
+        let clone = DQNAgent(topology: [8, 4, 3], seed: 1)
+        try await clone.loadCheckpoint(checkpoint)
+        let again = await clone.exportCheckpoint()
+        #expect(again == checkpoint)
+    }
 }
