@@ -1,5 +1,6 @@
 import SwiftUI
 import AbbeyCompanionKit
+import CoreAITools
 import SwiftData
 
 /// Root entry point for Abbey's native macOS companion app.
@@ -19,6 +20,10 @@ struct AbbeyCompanionApp: App {
     @State private var showResetConfirm = false
     @State private var showAbout = false
     @State private var showHelp = false
+    @State private var showShortcuts = false
+    @AppStorage("abbey.sidebarSelection") private var savedSelection = "dashboard"
+    @AppStorage("abbey.windowWidth") private var windowWidth = 1100.0
+    @AppStorage("abbey.windowHeight") private var windowHeight = 720.0
 
     init() {
         let bootstrap = AbbeyStore.bootstrap()
@@ -31,7 +36,9 @@ struct AbbeyCompanionApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AbbeyRootView(initialSelection: SidebarSection(rawValue: savedSelection) ?? .dashboard) {
+                AIAssistantView()
+            }
                 .environment(engine)
                 .frame(minWidth: 920, minHeight: 580)
                 .navigationTitle("Abbey Companion · \(engine.config.operatingMode.rawValue)")
@@ -43,6 +50,14 @@ struct AbbeyCompanionApp: App {
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .abbeyHelpRequested)) { _ in
                     showHelp = true
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .abbeyNavigateTo)) { notification in
+                    if let section = notification.object as? String {
+                        savedSelection = section
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .abbeyShortcutsRequested)) { _ in
+                    showShortcuts = true
                 }
                 .confirmationDialog(
                     "Reset local SwiftData store?",
@@ -59,6 +74,9 @@ struct AbbeyCompanionApp: App {
                 .sheet(isPresented: $showAbout) {
                     AboutView()
                 }
+                .sheet(isPresented: $showShortcuts) {
+                    ShortcutHelpView()
+                }
                 .alert("Abbey commands", isPresented: $showHelp) {
                     Button("OK", role: .cancel) {}
                 } message: {
@@ -66,7 +84,7 @@ struct AbbeyCompanionApp: App {
                 }
         }
         .modelContainer(engine.modelContainer)
-        .defaultSize(width: 1100, height: 720)
+        .defaultSize(width: windowWidth, height: windowHeight)
         .commands {
             AbbeyCommands(engine: engine)
         }

@@ -131,6 +131,40 @@ struct DashboardView: View {
             .padding(24)
         }
         .navigationTitle("Dashboard")
+        .safeAreaInset(edge: .bottom) {
+            QuickIngestPanel()
+        }
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    Task { await engine.seedDemoData() }
+                } label: {
+                    Label("Seed", systemImage: "square.and.arrow.down")
+                }
+                .help("Seed demo data")
+
+                Button {
+                    exportJSON()
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .help("Export JSON")
+
+                Button {
+                    importJSON()
+                } label: {
+                    Label("Import", systemImage: "square.and.arrow.down.on.square")
+                }
+                .help("Import JSON")
+
+                Button {
+                    Task { await engine.scheduler.consolidateAllChannels() }
+                } label: {
+                    Label("Consolidate", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .help("Consolidate channels now")
+            }
+        }
         .onAppear { if engine.config.operatingMode == .mirror { refreshMirrorSnapshot() } }
     }
 
@@ -282,26 +316,14 @@ struct DashboardView: View {
     }
 
     private func exportJSON() {
-        do {
-            let data = try engine.exportJSON()
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.json]
-            panel.nameFieldStringValue = "abbey-companion-export.json"
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            try data.write(to: url, options: .atomic)
-            ioStatus = "Exported to \(url.lastPathComponent)"
-        } catch {
-            ioStatus = "Export failed: \(error.localizedDescription)"
-        }
+        guard let data = try? engine.exportJSON() else { ioStatus = "Export failed: serialization error"; return }
+        guard let url = DocumentIO.runJSONExport(data: data) else { return }
+        ioStatus = "Exported to \(url.lastPathComponent)"
     }
 
     private func importJSON() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let data = DocumentIO.runJSONImport() else { return }
         do {
-            let data = try Data(contentsOf: url)
             let result = try engine.importJSON(data)
             ioStatus = "Imported +\(result.messages) msgs, +\(result.users) users, +\(result.channels) channels"
             if engine.config.operatingMode == .mirror { refreshMirrorSnapshot() }
@@ -331,7 +353,7 @@ private struct MetricCard: View {
 
 #Preview("Dashboard") {
     let engine = AbbeyStore.makePreviewEngine()
-    return DashboardView()
+    DashboardView()
         .environment(engine)
         .modelContainer(engine.modelContainer)
 }

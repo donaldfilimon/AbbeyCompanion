@@ -42,9 +42,18 @@ public actor DQNAgent {
     private var buffer: ReplayBuffer
     private var rng: SplitMix64
 
-    public let gamma: Float
-    public let epsilon: Float
+    public private(set) var gamma: Float
+    public private(set) var epsilon: Float
+    public private(set) var learningRate: Float
+    public private(set) var batchSize: Int
     public private(set) var stepCount = 0
+
+    public func updateHyperparameters(gamma: Float? = nil, epsilon: Float? = nil, learningRate: Float? = nil, batchSize: Int? = nil) {
+        if let gamma { self.gamma = gamma }
+        if let epsilon { self.epsilon = epsilon }
+        if let learningRate { self.learningRate = learningRate }
+        if let batchSize { self.batchSize = batchSize }
+    }
 
     public struct Checkpoint: Codable, Sendable, Equatable {
         public var online: NeuralNetwork.Snapshot
@@ -68,13 +77,15 @@ public actor DQNAgent {
         }
     }
 
-    public init(topology: [Int], gamma: Float = 0.99, epsilon: Float = 0.1, bufferCapacity: Int = 10_000, seed: UInt64 = 42) {
+    public init(topology: [Int], gamma: Float = 0.99, epsilon: Float = 0.1, learningRate: Float = 0.001, batchSize: Int = 8, bufferCapacity: Int = 10_000, seed: UInt64 = 42) {
         self.online = NeuralNetwork(topology: topology, seed: seed)
         self.target = online
         self.buffer = ReplayBuffer(capacity: bufferCapacity)
         self.rng = SplitMix64(seed: seed &+ 1)
         self.gamma = gamma
         self.epsilon = epsilon
+        self.learningRate = learningRate
+        self.batchSize = batchSize
     }
 
     public var experienceCount: Int { buffer.count }
@@ -119,7 +130,7 @@ public actor DQNAgent {
                 done: true
             )
         )
-        learn(batchSize: 8)
+        learn(batchSize: batchSize)
     }
 
     /// ε-greedy action selection over raw Q-values.
@@ -152,7 +163,7 @@ public actor DQNAgent {
             if experience.action < targetVector.count {
                 targetVector[experience.action] = bootstrapped
             }
-            online.train(input: experience.state, target: targetVector)
+            online.train(input: experience.state, target: targetVector, learningRate: learningRate)
         }
 
         stepCount += 1

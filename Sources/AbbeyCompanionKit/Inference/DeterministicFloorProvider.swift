@@ -31,7 +31,7 @@ struct DeterministicFloorProvider: InferenceProvider {
         case .personaSwitch:
             text = "Persona switch noted."
         case .smallTalk:
-            text = Self.acknowledgements.randomElement() ?? "Noted."
+            text = Self.acknowledgements[abs(request.userText.hashValue) % Self.acknowledgements.count]
         case .unknown:
             text = "…"
         }

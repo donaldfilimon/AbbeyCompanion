@@ -7,31 +7,40 @@ no Vapor, no Fluent, no network required in `.deterministicFloor` mode.
 
 | | |
 |--|--|
-| Swift | 6.4+ (Xcode 27 / `swift-tools-version: 6.4`) |
-| Platform | macOS 26+ (`.macOS(.v26)`) |
-| Modules | `AbbeyCore` · `AbbeyCompanionKit` (SwiftUI + SwiftData) · `AbbeyCompanion` app |
+| Swift | **Xcode 27 bundled Swift 6.4** (SwiftData macros). Pin with `swiftly use xcode` |
+| Platform | macOS 27+ (`.macOS(.v27)`) |
+| Modules | `AbbeyCore` · `AbbeyCompanionKit` · `CoreAITools` · `AbbeyCompanion` app |
 | Store | `AbbeyStore` schema factory · relationships (`UserMemory`↔`ReputationEvent`, `ChannelContext`↔`GuildMessage`) |
+
+> **SwiftData vs swiftly snapshots:** `main-snapshot` / **6.5-dev** (OSS toolchains) do **not** ship `libSwiftDataMacros`. Using them — from PATH **or** Xcode → Toolchains → Development Snapshot — fails with `unknown attribute 'Query'`. This repo pins `.swift-version` → `xcode` so PATH `swift` (via swiftly) is Xcode’s 6.4 while your **global** swiftly default can stay on a snapshot.
+>
+> **Xcode UI:** menu **Xcode → Toolchains → Xcode Default** (not the Development Snapshot). Snapshots appear because swiftly installs into `~/Library/Developer/Toolchains/`.
 
 ## Run
 
 ```bash
-./scripts/check.sh   # build + AbbeyCoreTests + AbbeyCompanionKitTests
-./scripts/smoke.sh   # check + assert binary exists
-./scripts/run.sh     # launch app
+swiftly use xcode     # once per clone — writes .swift-version (already present)
+./scripts/check.sh    # build + all 3 test suites
+./scripts/smoke.sh    # check + assert binary exists
+./scripts/run.sh      # launch app
+# or, with .swift-version pinned:
+swift build && swift test && swift run
 ```
 
-CI: `.github/workflows/ci.yml` (macos-26 + Xcode 27 when available).
+CI: `.github/workflows/ci.yml` (`macos-27` + Xcode 27).
 
 ## Feature map
 
 | Surface | What it does |
 |---------|----------------|
 | Dashboard | Ingest → channel upsert → reputation → DQN → persona/inference → reply |
+| AI Assistant | App-hosted CoreAI `AssistantRootView` via `ConversationStoreBootstrap` (persona + inference) |
 | Intents | greeting, question, command, memoryStore, repQuery, personaSwitch, **modRequest** (`!kick`/`!ban`/`!purge`) |
 | DQN | 18→8 projection; ignore / reply / escalate; **checkpoint persistence**; learn batch 8 |
 | Reactions | Messages 👍/👎 credits delayed reward against stored policy (once per turn) |
 | Batch | Dashboard **transcript replay** (multi-line; `#` comments skipped) |
-| Users | Reputation history; **facts CRUD**; purge / kick / ban via ConfirmationGate |
+| Users | Reputation history (live relationship query); **search** user/guild/fact; facts CRUD; mod actions |
+| Messages | **Channel chip filter** (`@Query` + Capsule chips); search; 👍/👎 policy rewards |
 | Handoff | Seed demo · JSON export/import · autocomplete · live event feed |
 | Settings | Remote probe · Foundation Models status · strict intent · **reset DQN weights** |
 
@@ -55,5 +64,3 @@ Menu: **Abbey ▸ Seed Demo Data** · **Consolidate Channels Now** · **Reset Lo
 - Default inference is `.deterministicFloor` (fully offline).
 - Open decisions still flagged in code: softmax-on-Q vs logits (DQN uses logits);
   `.unknown` reachability (`classify` vs `classifyStrict`).
-- Partial from-source `swift-project` builds without `swift-run` are gated out of `PATH`
-  in `~/.zshrc`; prefer `./scripts/run.sh` anyway.

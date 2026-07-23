@@ -41,7 +41,7 @@ protocol InferenceProvider: Sendable {
 /// or an unavailable on-device model never takes Abbey fully offline — it just degrades
 /// to rule-based responses. Every fallback is reported through `EventBus` so the
 /// Dashboard can surface it rather than hiding it.
-actor InferenceRouter {
+package actor InferenceRouter {
     private let deterministicFloor: DeterministicFloorProvider
     private let onDevice: FoundationModelsProvider
     private let remote: RemoteOpenAICompatibleProvider

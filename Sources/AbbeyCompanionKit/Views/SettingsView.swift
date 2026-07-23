@@ -1,11 +1,44 @@
 import SwiftUI
 
+package enum AppAccentColor: String, CaseIterable {
+    case blue, purple, green, orange, pink, teal, indigo, mint
+
+    package var label: String { rawValue.capitalized }
+    package var swiftUIColor: Color {
+        switch self {
+        case .blue: return .blue
+        case .purple: return .purple
+        case .green: return .green
+        case .orange: return .orange
+        case .pink: return .pink
+        case .teal: return .teal
+        case .indigo: return .indigo
+        case .mint: return .mint
+        }
+    }
+}
+
+package enum AppFontSize: String, CaseIterable {
+    case small, medium, large
+
+    package var label: String { rawValue.capitalized }
+    package var scale: Double {
+        switch self {
+        case .small: return 0.9
+        case .medium: return 1.0
+        case .large: return 1.15
+        }
+    }
+}
+
 package struct SettingsView: View {
     @Environment(AbbeyEngine.self) private var engine
     @Bindable private var config = AppConfig.shared
     @State private var remoteProbeResult = ""
     @State private var isProbing = false
     @State private var onDeviceStatus = OnDeviceModelProbe.status()
+    @AppStorage("abbey.accentColor") private var accentColor = AppAccentColor.blue
+    @AppStorage("abbey.fontSize") private var fontSize = AppFontSize.medium
 
     package init() {}
 
@@ -114,9 +147,62 @@ package struct SettingsView: View {
                 Toggle("ABBEY_EQUITY_MODULE_ENABLED", isOn: $config.equityModuleEnabled)
             }
 
+            Section("Appearance") {
+                LabeledContent("Accent color") {
+                    Picker("", selection: $accentColor) {
+                        ForEach(AppAccentColor.allCases, id: \.rawValue) { color in
+                            HStack {
+                                Circle().fill(color.swiftUIColor).frame(width: 12, height: 12)
+                                Text(color.label)
+                            }
+                            .tag(color)
+                        }
+                    }
+                    .labelsHidden()
+                }
+                LabeledContent("Font size") {
+                    Picker("", selection: $fontSize) {
+                        Text("Small").tag(AppFontSize.small)
+                        Text("Medium").tag(AppFontSize.medium)
+                        Text("Large").tag(AppFontSize.large)
+                    }
+                    .labelsHidden()
+                }
+            }
+
             Section("DQN") {
                 LabeledContent("Steps") { Text("\(engine.dqnStepCount)") }
                 LabeledContent("Replay buffer") { Text("\(engine.dqnExperienceCount)") }
+                LabeledContent("Gamma (discount)") {
+                    Slider(value: $config.dqnGamma, in: 0.5...0.999, step: 0.01) {
+                        Text("Gamma")
+                    }
+                    .onChange(of: config.dqnGamma) { _, _ in Task { await engine.syncDQNConfig() } }
+                }
+                Text("Current: \(String(format: "%.3f", config.dqnGamma))")
+                    .font(.caption).foregroundStyle(.secondary)
+                LabeledContent("Epsilon (exploration)") {
+                    Slider(value: $config.dqnEpsilon, in: 0.0...0.5, step: 0.01) {
+                        Text("Epsilon")
+                    }
+                    .onChange(of: config.dqnEpsilon) { _, _ in Task { await engine.syncDQNConfig() } }
+                }
+                Text("Current: \(String(format: "%.2f", config.dqnEpsilon))")
+                    .font(.caption).foregroundStyle(.secondary)
+                LabeledContent("Learning rate") {
+                    Slider(value: $config.dqnLearningRate, in: 0.0001...0.1, step: 0.0001) {
+                        Text("LR")
+                    }
+                    .onChange(of: config.dqnLearningRate) { _, _ in Task { await engine.syncDQNConfig() } }
+                }
+                Text("Current: \(String(format: "%.4f", config.dqnLearningRate))")
+                    .font(.caption).foregroundStyle(.secondary)
+                LabeledContent("Batch size") {
+                    Stepper(value: $config.dqnBatchSize, in: 1...128, step: 1) {
+                        Text("\(config.dqnBatchSize)")
+                    }
+                    .onChange(of: config.dqnBatchSize) { _, _ in Task { await engine.syncDQNConfig() } }
+                }
                 Text("Weights auto-save under Application Support after each learn/reward.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

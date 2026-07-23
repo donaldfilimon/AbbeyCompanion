@@ -9,29 +9,38 @@ import Foundation
 /// This mirrors the same-named actor from the prior native macOS SwiftData architecture
 /// (2026-06-29 session) — see /areas/abbey-bot.md.
 package actor ConfirmationGate {
-    struct PendingRequest: Identifiable, Sendable {
-        let id: UUID
-        let kind: DestructiveAction
-        let targetUserId: String
-        let guildId: String
-        let reason: String
-        let requestedAt: Date
+    package struct PendingRequest: Identifiable, Sendable {
+        package let id: UUID
+        package let kind: DestructiveAction
+        package let targetUserId: String
+        package let guildId: String
+        package let reason: String
+        package let requestedAt: Date
+
+        package init(id: UUID, kind: DestructiveAction, targetUserId: String, guildId: String, reason: String, requestedAt: Date) {
+            self.id = id
+            self.kind = kind
+            self.targetUserId = targetUserId
+            self.guildId = guildId
+            self.reason = reason
+            self.requestedAt = requestedAt
+        }
     }
 
     private var pending: [UUID: CheckedContinuation<Bool, Never>] = [:]
-    private(set) var queue: [PendingRequest] = []
+    package private(set) var queue: [PendingRequest] = []
 
     private let requireConfirmation: @Sendable () -> Bool
     private let eventBus: EventBus
 
-    init(eventBus: EventBus, requireConfirmation: @escaping @Sendable () -> Bool) {
+    package init(eventBus: EventBus, requireConfirmation: @escaping @Sendable () -> Bool) {
         self.eventBus = eventBus
         self.requireConfirmation = requireConfirmation
     }
 
     /// Suspends until the pending request is confirmed or cancelled from the UI.
     /// Returns `true` if the caller should proceed with the destructive action.
-    func request(kind: DestructiveAction, targetUserId: String, guildId: String, reason: String) async -> Bool {
+    package func request(kind: DestructiveAction, targetUserId: String, guildId: String, reason: String) async -> Bool {
         await eventBus.publish(.destructiveActionRequested(kind: kind, targetUserId: targetUserId, guildId: guildId))
 
         guard requireConfirmation() else { return true }
@@ -52,7 +61,7 @@ package actor ConfirmationGate {
     }
 
     /// Called by the confirmation sheet when the user taps Confirm.
-    func confirm(_ id: UUID) async {
+    package func confirm(_ id: UUID) async {
         guard let continuation = pending.removeValue(forKey: id) else { return }
         if let item = queue.first(where: { $0.id == id }) {
             queue.removeAll { $0.id == id }
@@ -62,7 +71,7 @@ package actor ConfirmationGate {
     }
 
     /// Called by the confirmation sheet when the user taps Cancel, or dismisses it.
-    func cancel(_ id: UUID) async {
+    package func cancel(_ id: UUID) async {
         guard let continuation = pending.removeValue(forKey: id) else { return }
         if let item = queue.first(where: { $0.id == id }) {
             queue.removeAll { $0.id == id }

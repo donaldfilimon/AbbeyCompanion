@@ -4,11 +4,12 @@ import PackageDescription
 let package = Package(
     name: "AbbeyCompanion",
     platforms: [
-        .macOS(.v26)
+        .macOS(.v27)
     ],
     products: [
         .library(name: "AbbeyCore", targets: ["AbbeyCore"]),
         .library(name: "AbbeyCompanionKit", targets: ["AbbeyCompanionKit"]),
+        .library(name: "CoreAITools", targets: ["CoreAITools"]),
         .executable(name: "AbbeyCompanion", targets: ["AbbeyCompanion"])
     ],
     targets: [
@@ -27,9 +28,17 @@ let package = Package(
                 .swiftLanguageMode(.v6)
             ]
         ),
+        .target(
+            name: "CoreAITools",
+            dependencies: ["AbbeyCore"],
+            path: "Sources/CoreAITools",
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ]
+        ),
         .executableTarget(
             name: "AbbeyCompanion",
-            dependencies: ["AbbeyCompanionKit"],
+            dependencies: ["AbbeyCompanionKit", "CoreAITools"],
             path: "Sources/AbbeyCompanionApp",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
@@ -45,8 +54,16 @@ let package = Package(
         ),
         .testTarget(
             name: "AbbeyCompanionKitTests",
-            dependencies: ["AbbeyCompanionKit", "AbbeyCore"],
+            dependencies: ["AbbeyCompanionKit", "CoreAITools", "AbbeyCore"],
             path: "Tests/AbbeyCompanionKitTests",
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ]
+        ),
+        .testTarget(
+            name: "CoreAIToolsTests",
+            dependencies: ["CoreAITools"],
+            path: "Tests/CoreAIToolsTests",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]

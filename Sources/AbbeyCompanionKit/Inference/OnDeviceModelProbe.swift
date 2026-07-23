@@ -3,25 +3,25 @@ import Foundation
 import FoundationModels
 #endif
 
-enum OnDeviceModelStatus: Sendable, Equatable {
+package enum OnDeviceModelStatus: Sendable, Equatable {
     case available
     case unavailable(String)
     case unsupportedPlatform
 
-    var label: String {
+    package var label: String {
         switch self {
         case .available: return "Available"
         case .unavailable(let reason): return "Unavailable — \(reason)"
-        case .unsupportedPlatform: return "Requires macOS 26+"
+        case .unsupportedPlatform: return "Requires macOS 27+"
         }
     }
 }
 
-enum OnDeviceModelProbe {
+package enum OnDeviceModelProbe {
     @MainActor
-    static func status() -> OnDeviceModelStatus {
+    package static func status() -> OnDeviceModelStatus {
         #if canImport(FoundationModels)
-        guard #available(macOS 26.0, *) else { return .unsupportedPlatform }
+        guard #available(macOS 27.0, *) else { return .unsupportedPlatform }
         switch SystemLanguageModel.default.availability {
         case .available:
             return .available

@@ -7,7 +7,7 @@ package struct AboutView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Abbey Companion")
                 .font(.title.bold())
-            Text("Swift 6.4 · macOS 26+ · AbbeyCore + SwiftUI")
+            Text("Swift 6.4 · macOS 27+ · AbbeyCore · CoreAITools · SwiftUI")
                 .foregroundStyle(.secondary)
             Text("Standalone companion for Abbey Bot. Local SwiftData only — no Discord gateway, no Postgres sync.")
                 .fixedSize(horizontal: false, vertical: true)

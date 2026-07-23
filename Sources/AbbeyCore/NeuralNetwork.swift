@@ -128,21 +128,26 @@ public struct NeuralNetwork: Sendable {
     /// `var NeuralNetwork` (DQNAgent stores `online`/`target` as `var` properties).
     public mutating func train(input: [Float], target: [Float], learningRate: Float = 0.001) {
         var activations: [[Float]] = [input]
+        var preActivations: [[Float]] = []  // raw dot+bias before ReLU, for derivative
         var current = input
         for layerIndex in 0..<weights.count {
             let layerWeights = weights[layerIndex]
             let layerBiases = biases[layerIndex]
-            current = zip(layerWeights, layerBiases).map { weight, bias in
-                relu(dot(weight, current) + bias)
+            let raw = zip(layerWeights, layerBiases).map { weight, bias in
+                dot(weight, current) + bias
             }
+            preActivations.append(raw)
+            current = raw.map { relu($0) }
             activations.append(current)
         }
 
-        // Output layer error (assumes softmax + cross-entropy-shaped target vector).
+        // Output layer error (MSE-style: predicted - target).
         var delta = zip(activations.last ?? [], target).map { $0 - $1 }
 
         for layerIndex in stride(from: weights.count - 1, through: 0, by: -1) {
             let inputToLayer = activations[layerIndex]
+
+            // Weight + bias updates for this layer.
             for neuronIndex in 0..<weights[layerIndex].count {
                 let gradient = clip(delta[neuronIndex], to: 1.0)
                 biases[layerIndex][neuronIndex] -= learningRate * gradient
@@ -152,13 +157,20 @@ public struct NeuralNetwork: Sendable {
                 }
                 weights[layerIndex][neuronIndex] = updated
             }
+
             // Propagate error to the previous layer (skipped for the input layer).
             if layerIndex > 0 {
-                delta = (0..<inputToLayer.count).map { previousNeuron in
-                    weights[layerIndex].reduce(Float(0)) { partial, weight in
-                        let lane = previousNeuron < 8 ? weight[previousNeuron] : 0
-                        return partial + lane
+                let prevPreActivation = preActivations[layerIndex - 1]
+                let prevNeuronCount = inputToLayer.count
+                let currentNeuronCount = weights[layerIndex].count
+                delta = (0..<prevNeuronCount).map { prevNeuron in
+                    var sum: Float = 0
+                    for neuronIndex in 0..<currentNeuronCount {
+                        let lane = prevNeuron < 8 ? weights[layerIndex][neuronIndex][prevNeuron] : 0
+                        sum += delta[neuronIndex] * lane
                     }
+                    let reluDerivative: Float = prevPreActivation[prevNeuron] > 0 ? 1 : 0
+                    return sum * reluDerivative
                 }
             }
         }

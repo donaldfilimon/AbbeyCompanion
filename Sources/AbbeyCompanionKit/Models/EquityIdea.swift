@@ -8,7 +8,7 @@ import SwiftData
 /// framed as investment advice.
 @Model
 package final class EquityIdea {
-    @Attribute(.unique) var symbol: String        // e.g. "QX-4471"
+    @Attribute(.unique) package var symbol: String        // e.g. "QX-4471"
     package var thesisSummary: String
     package var syntheticScore: Double                     // 0.0–1.0, from FactorScreen
     package var factorBreakdown: [String: Double]
