@@ -180,16 +180,17 @@ package final class AbbeyEngine {
         let inboundMessageId = UUID().uuidString
         do {
             let writeContext = ModelContext(modelContainer)
+            let channel = upsertChannelContext(in: writeContext, channelId: channelId, guildId: guildId)
             writeContext.insert(
                 GuildMessage(
                     discordMessageId: inboundMessageId,
                     channelId: channelId,
                     guildId: guildId,
                     authorId: authorId,
-                    content: trimmed
+                    content: trimmed,
+                    channel: channel
                 )
             )
-            upsertChannelContext(in: writeContext, channelId: channelId, guildId: guildId)
             try writeContext.save()
         } catch {
             succeeded = false
@@ -318,13 +319,15 @@ package final class AbbeyEngine {
     private func persistReply(_ response: PersonaResponse, channelId: String, guildId: String) async {
         do {
             let replyContext = ModelContext(modelContainer)
+            let channel = upsertChannelContext(in: replyContext, channelId: channelId, guildId: guildId, incrementCount: false)
             replyContext.insert(
                 GuildMessage(
                     discordMessageId: UUID().uuidString,
                     channelId: channelId,
                     guildId: guildId,
                     authorId: "abbey:\(response.personaName.lowercased())",
-                    content: response.text
+                    content: response.text,
+                    channel: channel
                 )
             )
             try replyContext.save()
@@ -644,6 +647,12 @@ package final class AbbeyEngine {
             let id = msg.discordMessageId
             let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.discordMessageId == id })
             if (try? context.fetch(descriptor).first) != nil { continue }
+            let channel = upsertChannelContext(
+                in: context,
+                channelId: msg.channelId,
+                guildId: msg.guildId,
+                incrementCount: false
+            )
             context.insert(
                 GuildMessage(
                     discordMessageId: msg.discordMessageId,
@@ -651,7 +660,8 @@ package final class AbbeyEngine {
                     guildId: msg.guildId,
                     authorId: msg.authorId,
                     content: msg.content,
-                    createdAt: msg.createdAt
+                    createdAt: msg.createdAt,
+                    channel: channel
                 )
             )
             mCount += 1
@@ -713,17 +723,29 @@ package final class AbbeyEngine {
         try? context.save()
     }
 
-    private func upsertChannelContext(in context: ModelContext, channelId: String, guildId: String) {
+    @discardableResult
+    private func upsertChannelContext(
+        in context: ModelContext,
+        channelId: String,
+        guildId: String,
+        incrementCount: Bool = true
+    ) -> ChannelContext {
         let descriptor = FetchDescriptor<ChannelContext>(
             predicate: #Predicate { $0.channelId == channelId }
         )
         if let existing = try? context.fetch(descriptor).first {
-            existing.messageCount += 1
+            if incrementCount { existing.messageCount += 1 }
             existing.guildId = guildId
             existing.updatedAt = .now
-        } else {
-            context.insert(ChannelContext(channelId: channelId, guildId: guildId, messageCount: 1))
+            return existing
         }
+        let created = ChannelContext(
+            channelId: channelId,
+            guildId: guildId,
+            messageCount: incrementCount ? 1 : 0
+        )
+        context.insert(created)
+        return created
     }
 
     private func fetchChannelSummary(channelId: String) -> String {

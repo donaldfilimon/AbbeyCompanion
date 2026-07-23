@@ -11,11 +11,23 @@ package final class ReputationEvent {
     package var reason: String
     package var createdAt: Date
 
-    package init(userId: String, guildId: String, delta: Double, reason: String, createdAt: Date = .now) {
+    /// Inverse of `UserMemory.reputationEvents`. `userId`/`guildId` stay denormalized for
+    /// `#Predicate` filters that shouldn't hop the relationship.
+    package var user: UserMemory?
+
+    package init(
+        userId: String,
+        guildId: String,
+        delta: Double,
+        reason: String,
+        createdAt: Date = .now,
+        user: UserMemory? = nil
+    ) {
         self.userId = userId
         self.guildId = guildId
         self.delta = delta
         self.reason = reason
         self.createdAt = createdAt
+        self.user = user
     }
 }

@@ -5,7 +5,7 @@ import SwiftData
 /// This is a local persisted message log, not a live cache of Discord's message store.
 @Model
 package final class GuildMessage {
-    @Attribute(.unique) var discordMessageId: String
+    @Attribute(.unique) package var discordMessageId: String
     package var channelId: String
     package var guildId: String
     package var authorId: String
@@ -20,6 +20,9 @@ package final class GuildMessage {
     /// True once a UI reaction has already credited this policy decision.
     package var hasPolicyReward: Bool
 
+    /// Optional link to the channel row for relationship-aware deletes / navigation.
+    package var channel: ChannelContext?
+
     package init(
         discordMessageId: String,
         channelId: String,
@@ -30,7 +33,8 @@ package final class GuildMessage {
         reactionCount: Int = 0,
         policyState: [Double] = [],
         policyAction: Int = -1,
-        hasPolicyReward: Bool = false
+        hasPolicyReward: Bool = false,
+        channel: ChannelContext? = nil
     ) {
         self.discordMessageId = discordMessageId
         self.channelId = channelId
@@ -42,6 +46,7 @@ package final class GuildMessage {
         self.policyState = policyState
         self.policyAction = policyAction
         self.hasPolicyReward = hasPolicyReward
+        self.channel = channel
     }
 
     package var hasPolicy: Bool {

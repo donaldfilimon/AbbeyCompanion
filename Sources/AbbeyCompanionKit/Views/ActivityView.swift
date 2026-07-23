@@ -4,17 +4,31 @@ import SwiftData
 struct ActivityView: View {
     @Environment(AbbeyEngine.self) private var engine
     @Query(sort: \InteractionLog.createdAt, order: .reverse) private var logs: [InteractionLog]
+    @State private var search = ""
+
+    private var filtered: [InteractionLog] {
+        guard !search.isEmpty else { return logs }
+        return logs.filter {
+            $0.commandName.localizedCaseInsensitiveContains(search)
+                || $0.userId.localizedCaseInsensitiveContains(search)
+                || $0.guildId.localizedCaseInsensitiveContains(search)
+        }
+    }
 
     var body: some View {
         Group {
-            if logs.isEmpty {
+            if filtered.isEmpty {
                 ContentUnavailableView(
-                    "No activity yet",
+                    logs.isEmpty ? "No activity yet" : "No matches",
                     systemImage: "list.bullet.rectangle",
-                    description: Text("Ingest messages, generate equity ideas, or run moderation actions to populate InteractionLog.")
+                    description: Text(
+                        logs.isEmpty
+                            ? "Ingest messages, generate equity ideas, or run moderation actions to populate InteractionLog."
+                            : "Try a broader search."
+                    )
                 )
             } else {
-                List(logs) { log in
+                List(filtered) { log in
                     HStack(alignment: .top) {
                         Image(systemName: log.succeeded ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundStyle(log.succeeded ? .green : .red)
@@ -38,6 +52,7 @@ struct ActivityView: View {
             }
         }
         .navigationTitle("Activity")
+        .searchable(text: $search, prompt: "Command, user, or guild")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Clear log", role: .destructive) {
@@ -47,4 +62,11 @@ struct ActivityView: View {
             }
         }
     }
+}
+
+#Preview("Activity") {
+    let engine = AbbeyStore.makePreviewEngine()
+    return ActivityView()
+        .environment(engine)
+        .modelContainer(engine.modelContainer)
 }

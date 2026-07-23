@@ -9,7 +9,8 @@ no Vapor, no Fluent, no network required in `.deterministicFloor` mode.
 |--|--|
 | Swift | 6.4+ (Xcode 27 / `swift-tools-version: 6.4`) |
 | Platform | macOS 26+ (`.macOS(.v26)`) |
-| Modules | `AbbeyCore` · `AbbeyCompanionKit` (engine/UI) · `AbbeyCompanion` app |
+| Modules | `AbbeyCore` · `AbbeyCompanionKit` (SwiftUI + SwiftData) · `AbbeyCompanion` app |
+| Store | `AbbeyStore` schema factory · relationships (`UserMemory`↔`ReputationEvent`, `ChannelContext`↔`GuildMessage`) |
 
 ## Run
 

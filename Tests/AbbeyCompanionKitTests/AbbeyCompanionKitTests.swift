@@ -168,6 +168,27 @@ struct AbbeyCompanionKitTests {
         }
     }
 
+    @Test("SwiftData relationships link messages and reputation events")
+    func swiftDataRelationships() async throws {
+        let engine = try makeEngine()
+        try await withTestConfig {
+            _ = await engine.ingestMessage(
+                content: "hey there",
+                channelId: channel,
+                guildId: guild,
+                authorId: author
+            )
+            let context = ModelContext(engine.modelContainer)
+            let channels = try context.fetch(FetchDescriptor<ChannelContext>())
+            #expect(channels.contains { $0.channelId == channel && !$0.messages.isEmpty })
+
+            let users = try context.fetch(FetchDescriptor<UserMemory>())
+            #expect(users.contains { user in
+                user.discordUserId == author && user.guildId == guild && !user.reputationEvents.isEmpty
+            })
+        }
+    }
+
     @Test("reaction reward credits stored policy once")
     func reactionReward() async throws {
         let engine = try makeEngine()
@@ -194,16 +215,7 @@ struct AbbeyCompanionKitTests {
     // MARK: - Helpers
 
     private func makeEngine() throws -> AbbeyEngine {
-        let schema = Schema([
-            GuildMessage.self,
-            UserMemory.self,
-            ChannelContext.self,
-            ReputationEvent.self,
-            InteractionLog.self,
-            EquityIdea.self
-        ])
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let container = try AbbeyStore.makeInMemoryContainer()
         let checkpoint = FileManager.default.temporaryDirectory
             .appendingPathComponent("abbey-kit-tests-\(UUID().uuidString).json")
         return AbbeyEngine(modelContainer: container, dqnCheckpointURL: checkpoint)
