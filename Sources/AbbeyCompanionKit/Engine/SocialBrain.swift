@@ -96,15 +96,25 @@ package actor SocialBrain {
             let descriptor = FetchDescriptor<UserMemory>(
                 predicate: #Predicate { $0.discordUserId == userId && $0.guildId == guildId }
             )
+            let user: UserMemory
             if let existing = try context.fetch(descriptor).first {
                 existing.reputation = newValue
                 existing.interactionCount += 1
                 existing.updatedAt = .now
+                user = existing
             } else {
                 let record = UserMemory(discordUserId: userId, guildId: guildId, reputation: newValue, interactionCount: 1)
                 context.insert(record)
+                user = record
             }
-            context.insert(ReputationEvent(userId: userId, guildId: guildId, delta: delta, reason: reason))
+            let event = ReputationEvent(
+                userId: userId,
+                guildId: guildId,
+                delta: delta,
+                reason: reason,
+                user: user
+            )
+            context.insert(event)
             try context.save()
             lastPersistenceError = nil
         } catch {

@@ -6,10 +6,10 @@ import AppKit
 
 struct DashboardView: View {
     @Environment(AbbeyEngine.self) private var engine
-    @Query private var messages: [GuildMessage]
-    @Query private var users: [UserMemory]
-    @Query private var channels: [ChannelContext]
-    @Query private var logs: [InteractionLog]
+    @Query(sort: \GuildMessage.createdAt, order: .reverse) private var messages: [GuildMessage]
+    @Query(sort: \UserMemory.reputation, order: .reverse) private var users: [UserMemory]
+    @Query(sort: \ChannelContext.updatedAt, order: .reverse) private var channels: [ChannelContext]
+    @Query(sort: \InteractionLog.createdAt, order: .reverse) private var logs: [InteractionLog]
 
     @State private var draftChannelId = "general"
     @State private var draftGuildId = "dev-guild"
@@ -327,4 +327,11 @@ private struct MetricCard: View {
         .padding(14)
         .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
     }
+}
+
+#Preview("Dashboard") {
+    let engine = AbbeyStore.makePreviewEngine()
+    return DashboardView()
+        .environment(engine)
+        .modelContainer(engine.modelContainer)
 }

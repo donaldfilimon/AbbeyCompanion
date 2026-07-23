@@ -21,7 +21,7 @@ struct AbbeyCompanionApp: App {
     @State private var showHelp = false
 
     init() {
-        let bootstrap = Self.makeModelContainer()
+        let bootstrap = AbbeyStore.bootstrap()
         let engine = AbbeyEngine(modelContainer: bootstrap.container)
         if bootstrap.degraded {
             engine.metrics.markStoreDegraded()
@@ -74,47 +74,7 @@ struct AbbeyCompanionApp: App {
         Settings {
             SettingsView()
                 .environment(engine)
+                .modelContainer(engine.modelContainer)
         }
-    }
-
-    private struct Bootstrap {
-        let container: ModelContainer
-        let degraded: Bool
-    }
-
-    private static func makeModelContainer() -> Bootstrap {
-        let schema = Schema([
-            GuildMessage.self,
-            UserMemory.self,
-            ChannelContext.self,
-            ReputationEvent.self,
-            InteractionLog.self,
-            EquityIdea.self
-        ])
-        let configuration = ModelConfiguration(
-            "AbbeyCompanionStore",
-            schema: schema,
-            isStoredInMemoryOnly: false
-        )
-        do {
-            return Bootstrap(
-                container: try ModelContainer(for: schema, configurations: [configuration]),
-                degraded: false
-            )
-        } catch {
-            let fallback = ModelConfiguration(isStoredInMemoryOnly: true)
-            do {
-                return Bootstrap(
-                    container: try ModelContainer(for: schema, configurations: [fallback]),
-                    degraded: true
-                )
-            } catch {
-                fatalErrorUnrecoverable(error)
-            }
-        }
-    }
-
-    private static func fatalErrorUnrecoverable(_ error: Error) -> Never {
-        fatalError("AbbeyCompanion: could not construct any ModelContainer, in-memory fallback included: \(error)")
     }
 }

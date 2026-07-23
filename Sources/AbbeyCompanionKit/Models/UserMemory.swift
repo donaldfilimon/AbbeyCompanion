@@ -12,13 +12,24 @@ package final class UserMemory {
     package var interactionCount: Int
     package var updatedAt: Date
 
-    package init(discordUserId: String, guildId: String, facts: [String] = [], reputation: Double = 0.5, interactionCount: Int = 0, updatedAt: Date = .now) {
+    @Relationship(deleteRule: .cascade, inverse: \ReputationEvent.user)
+    package var reputationEvents: [ReputationEvent]
+
+    package init(
+        discordUserId: String,
+        guildId: String,
+        facts: [String] = [],
+        reputation: Double = 0.5,
+        interactionCount: Int = 0,
+        updatedAt: Date = .now
+    ) {
         self.discordUserId = discordUserId
         self.guildId = guildId
         self.facts = facts
         self.reputation = reputation
         self.interactionCount = interactionCount
         self.updatedAt = updatedAt
+        self.reputationEvents = []
     }
 
     package var compositeKey: String { "\(guildId):\(discordUserId)" }
