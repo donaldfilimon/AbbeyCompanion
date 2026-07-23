@@ -17,4 +17,4 @@ unset TOOLCHAINS
 
 "$SWIFT_BIN" build --package-path "$ROOT"
 "$SWIFT_BIN" test --package-path "$ROOT"
-echo "OK — build + AbbeyCoreTests"
+echo "OK — build + AbbeyCoreTests + AbbeyCompanionKitTests"

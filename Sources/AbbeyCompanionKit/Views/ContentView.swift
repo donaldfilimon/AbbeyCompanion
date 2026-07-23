@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum SidebarSection: String, CaseIterable, Identifiable {
+package enum SidebarSection: String, CaseIterable, Identifiable {
     case dashboard = "Dashboard"
     case users = "Users"
     case channels = "Channels"
@@ -9,9 +9,9 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case personas = "Personas"
     case equity = "Equity Research"
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var systemImage: String {
+    package var systemImage: String {
         switch self {
         case .dashboard: return "gauge.with.dots.needle.67percent"
         case .users: return "person.2"
@@ -24,12 +24,14 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     }
 }
 
-struct ContentView: View {
+package struct ContentView: View {
     @Environment(AbbeyEngine.self) private var engine
     @State private var selection: SidebarSection? = .dashboard
     @State private var pendingConfirmation: ConfirmationGate.PendingRequest?
 
-    var body: some View {
+    package init() {}
+
+    package var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
                 ForEach(SidebarSection.allCases.filter { section in

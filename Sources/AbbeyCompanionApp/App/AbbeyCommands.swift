@@ -1,4 +1,5 @@
 import SwiftUI
+import AbbeyCompanionKit
 
 struct AbbeyCommands: Commands {
     let engine: AbbeyEngine
@@ -36,10 +37,4 @@ struct AbbeyCommands: Commands {
             }
         }
     }
-}
-
-extension Notification.Name {
-    static let abbeyResetStoreRequested = Notification.Name("abbeyResetStoreRequested")
-    static let abbeyAboutRequested = Notification.Name("abbeyAboutRequested")
-    static let abbeyHelpRequested = Notification.Name("abbeyHelpRequested")
 }

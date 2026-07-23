@@ -1,13 +1,15 @@
 import SwiftUI
 
-struct SettingsView: View {
+package struct SettingsView: View {
     @Environment(AbbeyEngine.self) private var engine
     @Bindable private var config = AppConfig.shared
     @State private var remoteProbeResult = ""
     @State private var isProbing = false
     @State private var onDeviceStatus = OnDeviceModelProbe.status()
 
-    var body: some View {
+    package init() {}
+
+    package var body: some View {
         Form {
             Section("Operating mode") {
                 Picker("ABBEY_OPERATING_MODE", selection: $config.operatingMode) {

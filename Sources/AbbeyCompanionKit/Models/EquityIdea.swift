@@ -7,17 +7,17 @@ import SwiftData
 /// over a made-up universe — never real tickers, never real market data, and never
 /// framed as investment advice.
 @Model
-final class EquityIdea {
+package final class EquityIdea {
     @Attribute(.unique) var symbol: String        // e.g. "QX-4471"
-    var thesisSummary: String
-    var syntheticScore: Double                     // 0.0–1.0, from FactorScreen
-    var factorBreakdown: [String: Double]
-    var generatedAt: Date
+    package var thesisSummary: String
+    package var syntheticScore: Double                     // 0.0–1.0, from FactorScreen
+    package var factorBreakdown: [String: Double]
+    package var generatedAt: Date
 
-    static let disclaimer =
+    package static let disclaimer =
         "Synthetic instrument, synthetic data. Not investment advice, not a real security."
 
-    init(symbol: String, thesisSummary: String, syntheticScore: Double, factorBreakdown: [String: Double], generatedAt: Date = .now) {
+    package init(symbol: String, thesisSummary: String, syntheticScore: Double, factorBreakdown: [String: Double], generatedAt: Date = .now) {
         self.symbol = symbol
         self.thesisSummary = thesisSummary
         self.syntheticScore = syntheticScore

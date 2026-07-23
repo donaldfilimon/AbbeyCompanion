@@ -9,12 +9,12 @@ no Vapor, no Fluent, no network required in `.deterministicFloor` mode.
 |--|--|
 | Swift | 6.4+ (Xcode 27 / `swift-tools-version: 6.4`) |
 | Platform | macOS 26+ (`.macOS(.v26)`) |
-| Modules | `AbbeyCore` (DQN / intent / factors) + `AbbeyCompanion` app |
+| Modules | `AbbeyCore` · `AbbeyCompanionKit` (engine/UI) · `AbbeyCompanion` app |
 
 ## Run
 
 ```bash
-./scripts/check.sh   # build + AbbeyCoreTests
+./scripts/check.sh   # build + AbbeyCoreTests + AbbeyCompanionKitTests
 ./scripts/smoke.sh   # check + assert binary exists
 ./scripts/run.sh     # launch app
 ```

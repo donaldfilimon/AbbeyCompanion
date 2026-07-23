@@ -1,16 +1,16 @@
 import Foundation
 
-enum OperatingMode: String, CaseIterable, Codable, Identifiable, Sendable {
+package enum OperatingMode: String, CaseIterable, Codable, Identifiable, Sendable {
     case standalone
     case mirror
-    var id: String { rawValue }
+    package var id: String { rawValue }
 }
 
-enum InferenceMode: String, CaseIterable, Codable, Identifiable, Sendable {
+package enum InferenceMode: String, CaseIterable, Codable, Identifiable, Sendable {
     case deterministicFloor   // no model calls at all — rule-based only
     case onDevice             // Foundation Models framework, on-device
     case remoteCompatible     // OpenAI-compatible HTTP endpoint over URLSession
-    var id: String { rawValue }
+    package var id: String { rawValue }
 }
 
 /// The ABBEY_* configuration knobs, mirrored from the bot's environment-variable
@@ -20,60 +20,60 @@ enum InferenceMode: String, CaseIterable, Codable, Identifiable, Sendable {
 /// Persisted via `UserDefaults` (per-machine, not synced) rather than SwiftData, since
 /// these are process configuration, not domain data.
 @Observable
-final class AppConfig: @unchecked Sendable {
+package final class AppConfig: @unchecked Sendable {
     /// Process-wide settings singleton. `@unchecked Sendable` + shared instance is
     /// intentional: actors read these knobs via sync closures, and UserDefaults is
     /// the synchronization boundary.
-    static let shared = AppConfig()
+    package static let shared = AppConfig()
 
     private let defaults: UserDefaults
 
     // ABBEY_OPERATING_MODE
-    var operatingMode: OperatingMode {
+    package var operatingMode: OperatingMode {
         didSet { defaults.set(operatingMode.rawValue, forKey: Keys.operatingMode) }
     }
     // ABBEY_INFERENCE_MODE
-    var inferenceMode: InferenceMode {
+    package var inferenceMode: InferenceMode {
         didSet { defaults.set(inferenceMode.rawValue, forKey: Keys.inferenceMode) }
     }
     // ABBEY_REMOTE_ENDPOINT — only consulted when inferenceMode == .remoteCompatible
-    var remoteEndpoint: String {
+    package var remoteEndpoint: String {
         didSet { defaults.set(remoteEndpoint, forKey: Keys.remoteEndpoint) }
     }
     // ABBEY_REMOTE_API_KEY — optional Bearer token for OpenAI-compatible endpoints
-    var remoteAPIKey: String {
+    package var remoteAPIKey: String {
         didSet { defaults.set(remoteAPIKey, forKey: Keys.remoteAPIKey) }
     }
     // ABBEY_REMOTE_MODEL — model id sent in chat/completions body
-    var remoteModel: String {
+    package var remoteModel: String {
         didSet { defaults.set(remoteModel, forKey: Keys.remoteModel) }
     }
     // ABBEY_REPLY_COOLDOWN_SECONDS — per-user reply cooldown enforced by AbbeyScheduler
-    var replyCooldownSeconds: Double {
+    package var replyCooldownSeconds: Double {
         didSet { defaults.set(replyCooldownSeconds, forKey: Keys.replyCooldownSeconds) }
     }
     // ABBEY_MEMORY_CONSOLIDATION_INTERVAL_MIN — how often ChannelContext summaries recompute
-    var memoryConsolidationIntervalMinutes: Double {
+    package var memoryConsolidationIntervalMinutes: Double {
         didSet { defaults.set(memoryConsolidationIntervalMinutes, forKey: Keys.consolidationInterval) }
     }
     // ABBEY_REPUTATION_DECAY — EMA weight applied to the existing score in SocialBrain
-    var reputationDecay: Double {
+    package var reputationDecay: Double {
         didSet { defaults.set(reputationDecay, forKey: Keys.reputationDecay) }
     }
     // ABBEY_CONFIRMATION_REQUIRED — gates purge/kick/ban behind ConfirmationGate
-    var confirmationRequiredForDestructiveActions: Bool {
+    package var confirmationRequiredForDestructiveActions: Bool {
         didSet { defaults.set(confirmationRequiredForDestructiveActions, forKey: Keys.confirmationRequired) }
     }
     // ABBEY_EQUITY_MODULE_ENABLED — the synthetic/not-advice equity research surface
-    var equityModuleEnabled: Bool {
+    package var equityModuleEnabled: Bool {
         didSet { defaults.set(equityModuleEnabled, forKey: Keys.equityModuleEnabled) }
     }
     // ABBEY_USE_STRICT_INTENT — opt into classifyStrict (unknown for tiny/non-letter input)
-    var useStrictIntentClassification: Bool {
+    package var useStrictIntentClassification: Bool {
         didSet { defaults.set(useStrictIntentClassification, forKey: Keys.strictIntent) }
     }
     // ABBEY_ABSTRACTIVE_CONSOLIDATION — use inference for channel summaries when not on floor
-    var useAbstractiveConsolidation: Bool {
+    package var useAbstractiveConsolidation: Bool {
         didSet { defaults.set(useAbstractiveConsolidation, forKey: Keys.abstractiveConsolidation) }
     }
 
@@ -92,7 +92,7 @@ final class AppConfig: @unchecked Sendable {
         static let abstractiveConsolidation = "ABBEY_ABSTRACTIVE_CONSOLIDATION"
     }
 
-    init(defaults: UserDefaults = .standard) {
+    package init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.operatingMode = OperatingMode(rawValue: defaults.string(forKey: Keys.operatingMode) ?? "") ?? .standalone
         self.inferenceMode = InferenceMode(rawValue: defaults.string(forKey: Keys.inferenceMode) ?? "") ?? .deterministicFloor

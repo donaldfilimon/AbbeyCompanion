@@ -1,15 +1,15 @@
 import Foundation
 
-struct PersonaContext: Sendable {
-    var channelSummary: String
-    var userFacts: [String]
-    var reputation: Double
-    static let empty = PersonaContext(channelSummary: "", userFacts: [], reputation: 0.5)
+package struct PersonaContext: Sendable {
+    package var channelSummary: String
+    package var userFacts: [String]
+    package var reputation: Double
+    package static let empty = PersonaContext(channelSummary: "", userFacts: [], reputation: 0.5)
 }
 
-struct PersonaResponse: Sendable {
-    var text: String
-    var personaName: String
+package struct PersonaResponse: Sendable {
+    package var text: String
+    package var personaName: String
 }
 
 protocol Persona: Sendable {
