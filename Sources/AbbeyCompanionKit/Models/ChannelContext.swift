@@ -5,14 +5,14 @@ import SwiftData
 /// of recent channel activity, recomputed on the cadence set by
 /// `AppConfig.memoryConsolidationIntervalMinutes` (ABBEY_MEMORY_CONSOLIDATION_INTERVAL_MIN).
 @Model
-final class ChannelContext {
+package final class ChannelContext {
     @Attribute(.unique) var channelId: String
-    var guildId: String
-    var summary: String
-    var messageCount: Int
-    var updatedAt: Date
+    package var guildId: String
+    package var summary: String
+    package var messageCount: Int
+    package var updatedAt: Date
 
-    init(channelId: String, guildId: String, summary: String = "", messageCount: Int = 0, updatedAt: Date = .now) {
+    package init(channelId: String, guildId: String, summary: String = "", messageCount: Int = 0, updatedAt: Date = .now) {
         self.channelId = channelId
         self.guildId = guildId
         self.summary = summary

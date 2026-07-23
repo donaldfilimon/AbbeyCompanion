@@ -8,7 +8,7 @@ import Foundation
 ///
 /// This mirrors the same-named actor from the prior native macOS SwiftData architecture
 /// (2026-06-29 session) — see /areas/abbey-bot.md.
-actor ConfirmationGate {
+package actor ConfirmationGate {
     struct PendingRequest: Identifiable, Sendable {
         let id: UUID
         let kind: DestructiveAction

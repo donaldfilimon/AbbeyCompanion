@@ -4,7 +4,7 @@ import Foundation
 /// each launch, since they describe "this session," not historical fact (historical
 /// fact lives in the SwiftData models and is queried directly by the views that need it).
 @Observable
-final class EngineMetrics: @unchecked Sendable {
+package final class EngineMetrics: @unchecked Sendable {
     private(set) var messagesIngestedThisSession: Int = 0
     private(set) var reputationEventsThisSession: Int = 0
     private(set) var inferenceCallsByMode: [InferenceMode: Int] = [:]
@@ -14,22 +14,22 @@ final class EngineMetrics: @unchecked Sendable {
     private(set) var storeDegraded: Bool = false
     private(set) var lastConsolidationAt: Date?
 
-    func recordMessageIngested() {
+    package func recordMessageIngested() {
         messagesIngestedThisSession += 1
     }
 
-    func recordReputationEvent() {
+    package func recordReputationEvent() {
         reputationEventsThisSession += 1
     }
 
-    func recordInferenceCall(mode: InferenceMode, succeeded: Bool) {
+    package func recordInferenceCall(mode: InferenceMode, succeeded: Bool) {
         inferenceCallsByMode[mode, default: 0] += 1
         if !succeeded {
             inferenceFailuresByMode[mode, default: 0] += 1
         }
     }
 
-    func recordDestructiveAction(confirmed: Bool) {
+    package func recordDestructiveAction(confirmed: Bool) {
         if confirmed {
             destructiveActionsConfirmed += 1
         } else {
@@ -37,11 +37,11 @@ final class EngineMetrics: @unchecked Sendable {
         }
     }
 
-    func recordConsolidation() {
+    package func recordConsolidation() {
         lastConsolidationAt = .now
     }
 
-    func markStoreDegraded() {
+    package func markStoreDegraded() {
         storeDegraded = true
     }
 }

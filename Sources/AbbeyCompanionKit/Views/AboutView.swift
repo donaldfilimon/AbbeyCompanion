@@ -1,7 +1,9 @@
 import SwiftUI
 
-struct AboutView: View {
-    var body: some View {
+package struct AboutView: View {
+    package init() {}
+
+    package var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Abbey Companion")
                 .font(.title.bold())

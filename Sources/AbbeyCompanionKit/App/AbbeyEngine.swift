@@ -7,33 +7,33 @@ import AbbeyCore
 /// actor described in the Engine/ and Inference/ folders.
 @Observable
 @MainActor
-final class AbbeyEngine {
-    let modelContainer: ModelContainer
-    let config = AppConfig.shared
-    let metrics = EngineMetrics()
+package final class AbbeyEngine {
+    package let modelContainer: ModelContainer
+    package let config = AppConfig.shared
+    package let metrics = EngineMetrics()
 
     let eventBus: EventBus
     let socialBrain: SocialBrain
     let dqnAgent: DQNAgent
-    let scheduler: AbbeyScheduler
+    package let scheduler: AbbeyScheduler
     let confirmationGate: ConfirmationGate
     let personaRouter: ABIRouter
     let inferenceRouter: InferenceRouter
     var equityEngine = EquityResearchEngine()
 
-    private(set) var lastEvent: AbbeyEvent?
-    private(set) var confirmationTick: Int = 0
-    private(set) var lastReply: PersonaResponse?
-    private(set) var lastReplySkippedReason: String?
-    private(set) var lastIntent: IntentClassifier.Intent?
-    private(set) var lastDQNAction: DQNAction?
-    private(set) var dqnStepCount: Int = 0
+    package private(set) var lastEvent: AbbeyEvent?
+    package private(set) var confirmationTick: Int = 0
+    package private(set) var lastReply: PersonaResponse?
+    package private(set) var lastReplySkippedReason: String?
+    package private(set) var lastIntent: IntentClassifier.Intent?
+    package private(set) var lastDQNAction: DQNAction?
+    package private(set) var dqnStepCount: Int = 0
     /// Ring buffer of recent bus events for the Dashboard live feed.
-    private(set) var recentEvents: [String] = []
+    package private(set) var recentEvents: [String] = []
 
     private var eventListenerTask: Task<Void, Never>?
 
-    init(modelContainer: ModelContainer) {
+    package init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
 
         let bus = EventBus()
@@ -127,7 +127,7 @@ final class AbbeyEngine {
 
     /// Full standalone ingest loop with intent-specific side effects.
     @discardableResult
-    func ingestMessage(content: String, channelId: String, guildId: String, authorId: String) async -> PersonaResponse? {
+    package func ingestMessage(content: String, channelId: String, guildId: String, authorId: String) async -> PersonaResponse? {
         lastReplySkippedReason = nil
         lastReply = nil
         lastIntent = nil
@@ -290,7 +290,7 @@ final class AbbeyEngine {
         }
     }
 
-    func logInteraction(command: String, userId: String, guildId: String, succeeded: Bool, started: ContinuousClock.Instant) {
+    package func logInteraction(command: String, userId: String, guildId: String, succeeded: Bool, started: ContinuousClock.Instant) {
         let elapsed = started.duration(to: .now)
         let ms = Double(elapsed.components.seconds) * 1000
             + Double(elapsed.components.attoseconds) / 1e15
@@ -368,7 +368,7 @@ final class AbbeyEngine {
         }
     }
 
-    func deleteMessage(_ message: GuildMessage) {
+    package func deleteMessage(_ message: GuildMessage) {
         let context = ModelContext(modelContainer)
         let id = message.discordMessageId
         let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.discordMessageId == id })
@@ -378,7 +378,7 @@ final class AbbeyEngine {
         }
     }
 
-    func clearChannel(channelId: String) {
+    package func clearChannel(channelId: String) {
         let context = ModelContext(modelContainer)
         let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.channelId == channelId })
         if let rows = try? context.fetch(descriptor) {
@@ -387,7 +387,7 @@ final class AbbeyEngine {
         }
     }
 
-    func deleteChannelContext(channelId: String) {
+    package func deleteChannelContext(channelId: String) {
         let context = ModelContext(modelContainer)
         let descriptor = FetchDescriptor<ChannelContext>(predicate: #Predicate { $0.channelId == channelId })
         if let row = try? context.fetch(descriptor).first {
@@ -396,14 +396,14 @@ final class AbbeyEngine {
         }
     }
 
-    func clearActivityLogs() {
+    package func clearActivityLogs() {
         let context = ModelContext(modelContainer)
         try? context.delete(model: InteractionLog.self)
         try? context.save()
     }
 
     /// Wipes all SwiftData rows (keeps AppConfig / UserDefaults).
-    func resetLocalStore() throws {
+    package func resetLocalStore() throws {
         let context = ModelContext(modelContainer)
         try context.delete(model: GuildMessage.self)
         try context.delete(model: UserMemory.self)
@@ -430,7 +430,7 @@ final class AbbeyEngine {
         return text
     }
 
-    func performDestructiveAction(
+    package func performDestructiveAction(
         _ kind: DestructiveAction,
         targetUserId: String,
         guildId: String,
@@ -447,7 +447,7 @@ final class AbbeyEngine {
         logInteraction(command: "mod:\(kind.rawValue)", userId: targetUserId, guildId: guildId, succeeded: true, started: started)
     }
 
-    func removeFact(userId: String, guildId: String, fact: String) {
+    package func removeFact(userId: String, guildId: String, fact: String) {
         let context = ModelContext(modelContainer)
         let descriptor = FetchDescriptor<UserMemory>(
             predicate: #Predicate { $0.discordUserId == userId && $0.guildId == guildId }
@@ -458,12 +458,12 @@ final class AbbeyEngine {
         try? context.save()
     }
 
-    func addFact(userId: String, guildId: String, fact: String) async {
+    package func addFact(userId: String, guildId: String, fact: String) async {
         await socialBrain.rememberFact(userId: userId, guildId: guildId, fact: fact)
     }
 
     /// Seeds a small standalone demo so empty installs aren't blank.
-    func seedDemoData() async {
+    package func seedDemoData() async {
         let samples: [(String, String, String, String)] = [
             ("general", "dev-guild", "donald", "hey abbey"),
             ("general", "dev-guild", "donald", "remember I ship Zig nightlies"),
@@ -477,7 +477,7 @@ final class AbbeyEngine {
     }
 
     /// Mirror-mode helper: dump local store counts as a portable snapshot dictionary.
-    func mirrorSnapshot() throws -> [String: Int] {
+    package func mirrorSnapshot() throws -> [String: Int] {
         let context = ModelContext(modelContainer)
         return [
             "guildMessages": try context.fetchCount(FetchDescriptor<GuildMessage>()),
@@ -490,7 +490,7 @@ final class AbbeyEngine {
     }
 
     /// Export a JSON document of messages + user memories for backup / mirror handoff.
-    func exportJSON() throws -> Data {
+    package func exportJSON() throws -> Data {
         let context = ModelContext(modelContainer)
         let messages = try context.fetch(FetchDescriptor<GuildMessage>(sortBy: [SortDescriptor(\.createdAt)]))
         let users = try context.fetch(FetchDescriptor<UserMemory>())
@@ -529,7 +529,7 @@ final class AbbeyEngine {
     }
 
     /// Import messages/users/channels from `exportJSON` output (skips duplicate message IDs).
-    func importJSON(_ data: Data) throws -> (messages: Int, users: Int, channels: Int) {
+    package func importJSON(_ data: Data) throws -> (messages: Int, users: Int, channels: Int) {
         let doc = try MirrorExportDocument.decode(from: data)
         let context = ModelContext(modelContainer)
         var mCount = 0, uCount = 0, cCount = 0

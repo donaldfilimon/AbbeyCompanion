@@ -3,7 +3,7 @@ import Foundation
 /// Everything that happens inside the engine — message ingest, reputation changes,
 /// persona switches, confirmation prompts — flows through here as a single ordered
 /// stream so the UI layer can subscribe once instead of wiring up N delegate callbacks.
-enum AbbeyEvent: Sendable, Equatable {
+package enum AbbeyEvent: Sendable, Equatable {
     case messageIngested(channelId: String, guildId: String, authorId: String)
     case reputationChanged(userId: String, guildId: String, newValue: Double, reason: String)
     case channelContextConsolidated(channelId: String, messageCount: Int)
@@ -15,13 +15,13 @@ enum AbbeyEvent: Sendable, Equatable {
     case inferenceProviderFailed(mode: InferenceMode, message: String)
 }
 
-enum DestructiveAction: String, Sendable, CaseIterable {
+package enum DestructiveAction: String, Sendable, CaseIterable {
     case purge, kick, ban
 }
 
 /// Actor-isolated publisher over `AsyncStream`. Multiple UI subscribers each get their
 /// own stream via `subscribe()` — this is a broadcast, not a single-consumer queue.
-actor EventBus {
+package actor EventBus {
     private var continuations: [UUID: AsyncStream<AbbeyEvent>.Continuation] = [:]
 
     func subscribe() -> AsyncStream<AbbeyEvent> {

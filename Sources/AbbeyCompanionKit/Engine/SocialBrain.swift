@@ -7,7 +7,7 @@ import SwiftData
 /// isn't `Sendable` and isn't meant to be shared across concurrency domains, so each
 /// actor/background task that needs one creates its own from the same container
 /// (this is the documented pattern, not a shortcut).
-actor SocialBrain {
+package actor SocialBrain {
     private let modelContainer: ModelContainer
     private let eventBus: EventBus
     private let decay: @Sendable () -> Double

@@ -4,7 +4,7 @@ import SwiftData
 /// Owns the two time-driven behaviors described in /areas/abbey-bot.md:
 ///   - per-user reply cooldown (ABBEY_REPLY_COOLDOWN_SECONDS)
 ///   - channel memory consolidation on a fixed interval (ABBEY_MEMORY_CONSOLIDATION_INTERVAL_MIN)
-actor AbbeyScheduler {
+package actor AbbeyScheduler {
     private var lastReplyAt: [String: Date] = [:]     // key: "guildId:userId"
     private var consolidationTask: Task<Void, Never>?
 
@@ -37,26 +37,26 @@ actor AbbeyScheduler {
     /// Returns `true` if the user is currently cooling down and Abbey should skip
     /// replying this turn. Does not itself record a new reply — call `markReplied`
     /// after actually sending one.
-    func isCoolingDown(userId: String, guildId: String) -> Bool {
+    package func isCoolingDown(userId: String, guildId: String) -> Bool {
         guard let last = lastReplyAt[key(userId, guildId)] else { return false }
         return Date.now.timeIntervalSince(last) < cooldownSeconds()
     }
 
     /// Seconds remaining on cooldown, or `0` if clear.
-    func cooldownRemaining(userId: String, guildId: String) -> TimeInterval {
+    package func cooldownRemaining(userId: String, guildId: String) -> TimeInterval {
         guard let last = lastReplyAt[key(userId, guildId)] else { return 0 }
         let remaining = cooldownSeconds() - Date.now.timeIntervalSince(last)
         return max(0, remaining)
     }
 
-    func markReplied(userId: String, guildId: String) {
+    package func markReplied(userId: String, guildId: String) {
         lastReplyAt[key(userId, guildId)] = .now
     }
 
     /// Starts the recurring consolidation loop. Idempotent — calling this twice
     /// cancels the previous loop first, so config changes (interval edited in
     /// Settings) can just call `start()` again.
-    func start() {
+    package func start() {
         consolidationTask?.cancel()
         consolidationTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -70,7 +70,7 @@ actor AbbeyScheduler {
         }
     }
 
-    func stop() {
+    package func stop() {
         consolidationTask?.cancel()
         consolidationTask = nil
     }
@@ -79,7 +79,7 @@ actor AbbeyScheduler {
     /// when `useAbstractive` is on and inference isn't the deterministic floor path's
     /// only option, asks `InferenceRouter` for a short abstractive summary (still
     /// falls back to extractive on empty/failure).
-    func consolidateAllChannels() async {
+    package func consolidateAllChannels() async {
         let context = ModelContext(modelContainer)
         guard let channels = try? context.fetch(FetchDescriptor<ChannelContext>()) else { return }
         let abstractive = useAbstractive()

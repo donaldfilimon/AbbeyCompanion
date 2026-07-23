@@ -1,4 +1,5 @@
 import SwiftUI
+import AbbeyCompanionKit
 import SwiftData
 
 /// Root entry point for Abbey's native macOS companion app.

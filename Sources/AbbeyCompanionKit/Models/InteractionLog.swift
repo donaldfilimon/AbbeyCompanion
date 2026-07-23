@@ -5,15 +5,15 @@ import SwiftData
 /// mode from bot-reported events; populated directly in `.standalone` mode when the
 /// user drives commands from within this app's UI.
 @Model
-final class InteractionLog {
-    var commandName: String
-    var userId: String
-    var guildId: String
-    var succeeded: Bool
-    var latencyMs: Double
-    var createdAt: Date
+package final class InteractionLog {
+    package var commandName: String
+    package var userId: String
+    package var guildId: String
+    package var succeeded: Bool
+    package var latencyMs: Double
+    package var createdAt: Date
 
-    init(commandName: String, userId: String, guildId: String, succeeded: Bool, latencyMs: Double, createdAt: Date = .now) {
+    package init(commandName: String, userId: String, guildId: String, succeeded: Bool, latencyMs: Double, createdAt: Date = .now) {
         self.commandName = commandName
         self.userId = userId
         self.guildId = guildId
