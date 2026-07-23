@@ -28,13 +28,17 @@ package final class AbbeyEngine {
     package private(set) var lastIntent: IntentClassifier.Intent?
     package private(set) var lastDQNAction: DQNAction?
     package private(set) var dqnStepCount: Int = 0
+    package private(set) var dqnExperienceCount: Int = 0
+    package private(set) var lastBatchIngestCount: Int = 0
     /// Ring buffer of recent bus events for the Dashboard live feed.
     package private(set) var recentEvents: [String] = []
 
     private var eventListenerTask: Task<Void, Never>?
+    private let dqnCheckpointURL: URL
 
-    package init(modelContainer: ModelContainer) {
+    package init(modelContainer: ModelContainer, dqnCheckpointURL: URL? = nil) {
         self.modelContainer = modelContainer
+        self.dqnCheckpointURL = dqnCheckpointURL ?? Self.defaultDQNCheckpointURL()
 
         let bus = EventBus()
         self.eventBus = bus
@@ -63,9 +67,43 @@ package final class AbbeyEngine {
         )
 
         startEventListener()
-        Task { [socialBrain, scheduler] in
+        let checkpointURL = self.dqnCheckpointURL
+        Task { [weak self, socialBrain, scheduler, dqnAgent] in
             await socialBrain.warmCache()
             await scheduler.start()
+            await Self.loadDQNCheckpoint(into: dqnAgent, from: checkpointURL)
+            guard let self else { return }
+            self.dqnStepCount = await dqnAgent.stepCount
+            self.dqnExperienceCount = await dqnAgent.experienceCount
+        }
+    }
+
+    private static func defaultDQNCheckpointURL() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let dir = base.appendingPathComponent("AbbeyCompanion", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("dqn-checkpoint.json")
+    }
+
+    private static func loadDQNCheckpoint(into agent: DQNAgent, from url: URL) async {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            let checkpoint = try JSONDecoder().decode(DQNAgent.Checkpoint.self, from: data)
+            try await agent.loadCheckpoint(checkpoint)
+        } catch {
+            // Corrupt checkpoint — keep freshly initialized weights.
+        }
+    }
+
+    private func persistDQNCheckpoint() async {
+        do {
+            let checkpoint = await dqnAgent.exportCheckpoint()
+            let data = try JSONEncoder().encode(checkpoint)
+            try data.write(to: dqnCheckpointURL, options: .atomic)
+        } catch {
+            // Persistence best-effort; runtime continues.
         }
     }
 
@@ -139,11 +177,12 @@ package final class AbbeyEngine {
         let started = ContinuousClock.now
         var succeeded = true
 
+        let inboundMessageId = UUID().uuidString
         do {
             let writeContext = ModelContext(modelContainer)
             writeContext.insert(
                 GuildMessage(
-                    discordMessageId: UUID().uuidString,
+                    discordMessageId: inboundMessageId,
                     channelId: channelId,
                     guildId: guildId,
                     authorId: authorId,
@@ -221,20 +260,24 @@ package final class AbbeyEngine {
         let actionIndex = await dqnAgent.selectAction(state: state)
         let dqnAction = DQNAction(raw: actionIndex)
         lastDQNAction = dqnAction
+        attachPolicy(to: inboundMessageId, state: state, action: actionIndex)
         await dqnAgent.remember(Experience(state: state, action: actionIndex, reward: Float(intent.quality), nextState: state, done: true))
-        await dqnAgent.learn()
+        await dqnAgent.learn(batchSize: 8)
         dqnStepCount = await dqnAgent.stepCount
+        dqnExperienceCount = await dqnAgent.experienceCount
+        await persistDQNCheckpoint()
         await socialBrain.recordInteraction(userId: authorId, guildId: guildId, quality: intent.quality)
+
+        // Cooldown outranks DQN ignore so the UI/skip reason stays accurate.
+        if await scheduler.isCoolingDown(userId: authorId, guildId: guildId) {
+            lastReplySkippedReason = "Reply cooldown active for \(authorId) in \(guildId)."
+            logInteraction(command: "ingest:cooldown", userId: authorId, guildId: guildId, succeeded: succeeded, started: started)
+            return nil
+        }
 
         if dqnAction == .ignore {
             lastReplySkippedReason = "DQN chose ignore for this turn."
             logInteraction(command: "ingest:ignore", userId: authorId, guildId: guildId, succeeded: succeeded, started: started)
-            return nil
-        }
-
-        if await scheduler.isCoolingDown(userId: authorId, guildId: guildId) {
-            lastReplySkippedReason = "Reply cooldown active for \(authorId) in \(guildId)."
-            logInteraction(command: "ingest:cooldown", userId: authorId, guildId: guildId, succeeded: succeeded, started: started)
             return nil
         }
 
@@ -462,6 +505,69 @@ package final class AbbeyEngine {
         await socialBrain.rememberFact(userId: userId, guildId: guildId, fact: fact)
     }
 
+    /// Replay a multi-line transcript (one message per line; `#` comments and blanks skipped).
+    @discardableResult
+    package func ingestBatch(
+        transcript: String,
+        channelId: String,
+        guildId: String,
+        authorId: String
+    ) async -> Int {
+        let lines = transcript.split(whereSeparator: \.isNewline).map(String.init)
+        var count = 0
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+            _ = await ingestMessage(
+                content: trimmed,
+                channelId: channelId,
+                guildId: guildId,
+                authorId: authorId
+            )
+            count += 1
+        }
+        lastBatchIngestCount = count
+        return count
+    }
+
+    /// Apply a delayed 👍/👎 reward to the DQN decision recorded on an inbound message.
+    @discardableResult
+    package func applyReaction(to message: GuildMessage, reward: Float) async -> Bool {
+        let context = ModelContext(modelContainer)
+        let id = message.discordMessageId
+        let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.discordMessageId == id })
+        guard let row = try? context.fetch(descriptor).first,
+              row.hasPolicy,
+              !row.hasPolicyReward
+        else {
+            return false
+        }
+
+        let state = row.policyState.map { Float($0) }
+        let action = row.policyAction
+        await dqnAgent.creditReward(state: state, action: action, reward: reward)
+        dqnStepCount = await dqnAgent.stepCount
+        dqnExperienceCount = await dqnAgent.experienceCount
+        await persistDQNCheckpoint()
+
+        row.reactionCount += reward >= 0 ? 1 : -1
+        row.hasPolicyReward = true
+        try? context.save()
+        recentEvents.insert(
+            "[\(Date.now.formatted(date: .omitted, time: .shortened))] reaction \(reward >= 0 ? "+" : "")\(String(format: "%.1f", reward)) on \(id.prefix(8))",
+            at: 0
+        )
+        return true
+    }
+
+    /// Wipe persisted DQN weights and reinitialize in-memory agent from seed 42.
+    package func resetDQNWeights() async {
+        try? FileManager.default.removeItem(at: dqnCheckpointURL)
+        await dqnAgent.reset(seed: 42)
+        dqnStepCount = await dqnAgent.stepCount
+        dqnExperienceCount = await dqnAgent.experienceCount
+    }
+
     /// Seeds a small standalone demo so empty installs aren't blank.
     package func seedDemoData() async {
         let samples: [(String, String, String, String)] = [
@@ -596,6 +702,15 @@ package final class AbbeyEngine {
         try context.save()
         Task { await socialBrain.warmCache() }
         return (mCount, uCount, cCount)
+    }
+
+    private func attachPolicy(to messageId: String, state: [Float], action: Int) {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.discordMessageId == messageId })
+        guard let row = try? context.fetch(descriptor).first else { return }
+        row.policyState = state.map { Double($0) }
+        row.policyAction = action
+        try? context.save()
     }
 
     private func upsertChannelContext(in context: ModelContext, channelId: String, guildId: String) {

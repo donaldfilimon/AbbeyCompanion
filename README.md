@@ -27,10 +27,12 @@ CI: `.github/workflows/ci.yml` (macos-26 + Xcode 27 when available).
 |---------|----------------|
 | Dashboard | Ingest → channel upsert → reputation → DQN → persona/inference → reply |
 | Intents | greeting, question, command, memoryStore, repQuery, personaSwitch, **modRequest** (`!kick`/`!ban`/`!purge`) |
-| DQN | 18→8 `projectToNetworkInput`; actions ignore / reply / escalate |
+| DQN | 18→8 projection; ignore / reply / escalate; **checkpoint persistence**; learn batch 8 |
+| Reactions | Messages 👍/👎 credits delayed reward against stored policy (once per turn) |
+| Batch | Dashboard **transcript replay** (multi-line; `#` comments skipped) |
 | Users | Reputation history; **facts CRUD**; purge / kick / ban via ConfirmationGate |
-| Dashboard | Seed demo · JSON export/import · autocomplete · live event feed · DQN action |
-| Settings | Remote probe · **Foundation Models availability** · strict intent |
+| Handoff | Seed demo · JSON export/import · autocomplete · live event feed |
+| Settings | Remote probe · Foundation Models status · strict intent · **reset DQN weights** |
 
 ## Config knobs (`AppConfig` / Settings)
 

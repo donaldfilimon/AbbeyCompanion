@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AbbeyCore
 
 struct MessagesView: View {
     @Environment(AbbeyEngine.self) private var engine
@@ -55,15 +56,51 @@ struct MessagesView: View {
             } else {
                 List {
                     ForEach(filtered) { message in
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text(message.authorId).font(.headline)
                                 Text("#\(message.channelId)").font(.caption).foregroundStyle(.secondary)
+                                if message.policyAction >= 0 {
+                                    Text("dqn:\(DQNAction(raw: message.policyAction).label)")
+                                        .font(.caption2.monospaced())
+                                        .foregroundStyle(.tertiary)
+                                }
                                 Spacer()
                                 Text(message.createdAt, style: .time).font(.caption).foregroundStyle(.secondary)
                             }
                             Text(message.content)
                                 .textSelection(.enabled)
+                            if message.hasPolicy {
+                                HStack(spacing: 8) {
+                                    Button {
+                                        Task { await engine.applyReaction(to: message, reward: 1) }
+                                    } label: {
+                                        Label("Good", systemImage: "hand.thumbsup")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .disabled(message.hasPolicyReward)
+
+                                    Button {
+                                        Task { await engine.applyReaction(to: message, reward: -1) }
+                                    } label: {
+                                        Label("Bad", systemImage: "hand.thumbsdown")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .disabled(message.hasPolicyReward)
+
+                                    if message.reactionCount != 0 {
+                                        Text("rx \(message.reactionCount)")
+                                            .font(.caption.monospaced())
+                                            .foregroundStyle(.secondary)
+                                    } else if message.hasPolicyReward {
+                                        Text("rewarded")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
                         }
                         .padding(.vertical, 2)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -74,6 +111,14 @@ struct MessagesView: View {
                             }
                         }
                         .contextMenu {
+                            if message.hasPolicy && !message.hasPolicyReward {
+                                Button("Reward +1") {
+                                    Task { await engine.applyReaction(to: message, reward: 1) }
+                                }
+                                Button("Reward -1") {
+                                    Task { await engine.applyReaction(to: message, reward: -1) }
+                                }
+                            }
                             Button("Delete", role: .destructive) {
                                 engine.deleteMessage(message)
                             }

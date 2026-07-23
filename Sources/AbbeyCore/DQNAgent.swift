@@ -46,6 +46,28 @@ public actor DQNAgent {
     public let epsilon: Float
     public private(set) var stepCount = 0
 
+    public struct Checkpoint: Codable, Sendable, Equatable {
+        public var online: NeuralNetwork.Snapshot
+        public var target: NeuralNetwork.Snapshot
+        public var stepCount: Int
+        public var gamma: Float
+        public var epsilon: Float
+
+        public init(
+            online: NeuralNetwork.Snapshot,
+            target: NeuralNetwork.Snapshot,
+            stepCount: Int,
+            gamma: Float,
+            epsilon: Float
+        ) {
+            self.online = online
+            self.target = target
+            self.stepCount = stepCount
+            self.gamma = gamma
+            self.epsilon = epsilon
+        }
+    }
+
     public init(topology: [Int], gamma: Float = 0.99, epsilon: Float = 0.1, bufferCapacity: Int = 10_000, seed: UInt64 = 42) {
         self.online = NeuralNetwork(topology: topology, seed: seed)
         self.target = online
@@ -53,6 +75,51 @@ public actor DQNAgent {
         self.rng = SplitMix64(seed: seed &+ 1)
         self.gamma = gamma
         self.epsilon = epsilon
+    }
+
+    public var experienceCount: Int { buffer.count }
+
+    public func exportCheckpoint() -> Checkpoint {
+        Checkpoint(
+            online: online.makeSnapshot(),
+            target: target.makeSnapshot(),
+            stepCount: stepCount,
+            gamma: gamma,
+            epsilon: epsilon
+        )
+    }
+
+    public func loadCheckpoint(_ checkpoint: Checkpoint) throws {
+        guard checkpoint.online.topology == online.topology,
+              checkpoint.target.topology == online.topology
+        else {
+            throw CheckpointError.topologyMismatch
+        }
+        online = try NeuralNetwork(snapshot: checkpoint.online)
+        target = try NeuralNetwork(snapshot: checkpoint.target)
+        stepCount = checkpoint.stepCount
+    }
+
+    public func reset(seed: UInt64 = 42) {
+        online = NeuralNetwork(topology: online.topology, seed: seed)
+        target = online
+        buffer = ReplayBuffer(capacity: buffer.capacity)
+        rng = SplitMix64(seed: seed &+ 1)
+        stepCount = 0
+    }
+
+    /// Credits a delayed reward (e.g. UI 👍/👎) against a prior policy decision.
+    public func creditReward(state: [Float], action: Int, reward: Float) {
+        remember(
+            Experience(
+                state: state,
+                action: action,
+                reward: reward,
+                nextState: state,
+                done: true
+            )
+        )
+        learn(batchSize: 8)
     }
 
     /// ε-greedy action selection over raw Q-values.

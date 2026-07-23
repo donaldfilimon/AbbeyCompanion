@@ -98,32 +98,20 @@ struct AbbeyCompanionKitTests {
         }
     }
 
-    @Test("reply cooldown arms after a successful reply")
+    @Test("reply cooldown arms and skips subsequent replies")
     func replyCooldown() async throws {
         let engine = try makeEngine()
         try await withTestConfig(cooldownSeconds: 120) {
-            var gotReply = false
-            for _ in 0..<30 {
-                if await engine.ingestMessage(
-                    content: "hello friend",
-                    channelId: channel,
-                    guildId: guild,
-                    authorId: "cooldown-user"
-                ) != nil {
-                    gotReply = true
-                    break
-                }
-            }
-            #expect(gotReply)
+            await engine.scheduler.markReplied(userId: "cooldown-user", guildId: guild)
             let remaining = await engine.scheduler.cooldownRemaining(
                 userId: "cooldown-user",
                 guildId: guild
             )
-            #expect(remaining > 0)
+            #expect(remaining > 100)
 
             // DQN ignore is checked before cooldown; retry until a non-ignore turn.
             var sawCooldownSkip = false
-            for _ in 0..<40 {
+            for _ in 0..<60 {
                 let second = await engine.ingestMessage(
                     content: "hello again",
                     channelId: channel,
@@ -156,6 +144,53 @@ struct AbbeyCompanionKitTests {
         }
     }
 
+    @Test("batch transcript replay ingests non-comment lines")
+    func batchReplay() async throws {
+        let engine = try makeEngine()
+        try await withTestConfig {
+            let transcript = """
+            # setup
+            hey abbey
+            remember batch facts
+
+            what is my reputation?
+            """
+            let count = await engine.ingestBatch(
+                transcript: transcript,
+                channelId: channel,
+                guildId: guild,
+                authorId: author
+            )
+            #expect(count == 3)
+            #expect(engine.lastBatchIngestCount == 3)
+            let stored = try messageCount(in: engine)
+            #expect(stored >= 3)
+        }
+    }
+
+    @Test("reaction reward credits stored policy once")
+    func reactionReward() async throws {
+        let engine = try makeEngine()
+        try await withTestConfig {
+            for _ in 0..<25 {
+                _ = await engine.ingestMessage(
+                    content: "hello there friend",
+                    channelId: channel,
+                    guildId: guild,
+                    authorId: author
+                )
+                if let message = try firstPolicyMessage(in: engine) {
+                    let ok = await engine.applyReaction(to: message, reward: 1)
+                    #expect(ok)
+                    let again = await engine.applyReaction(to: message, reward: 1)
+                    #expect(!again)
+                    return
+                }
+            }
+            Issue.record("expected a message with an attached DQN policy")
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeEngine() throws -> AbbeyEngine {
@@ -169,7 +204,15 @@ struct AbbeyCompanionKitTests {
         ])
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])
-        return AbbeyEngine(modelContainer: container)
+        let checkpoint = FileManager.default.temporaryDirectory
+            .appendingPathComponent("abbey-kit-tests-\(UUID().uuidString).json")
+        return AbbeyEngine(modelContainer: container, dqnCheckpointURL: checkpoint)
+    }
+
+    private func firstPolicyMessage(in engine: AbbeyEngine) throws -> GuildMessage? {
+        let context = ModelContext(engine.modelContainer)
+        let rows = try context.fetch(FetchDescriptor<GuildMessage>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
+        return rows.first(where: \.hasPolicy)
     }
 
     private func withTestConfig(

@@ -114,6 +114,17 @@ package struct SettingsView: View {
                 Toggle("ABBEY_EQUITY_MODULE_ENABLED", isOn: $config.equityModuleEnabled)
             }
 
+            Section("DQN") {
+                LabeledContent("Steps") { Text("\(engine.dqnStepCount)") }
+                LabeledContent("Replay buffer") { Text("\(engine.dqnExperienceCount)") }
+                Text("Weights auto-save under Application Support after each learn/reward.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Reset DQN weights…", role: .destructive) {
+                    Task { await engine.resetDQNWeights() }
+                }
+            }
+
             Section("Danger zone") {
                 if let consolidated = engine.metrics.lastConsolidationAt {
                     LabeledContent("Last consolidation") {
