@@ -3,43 +3,40 @@ import SwiftData
 
 struct UsersView: View {
     @Environment(AbbeyEngine.self) private var engine
-    @Query(sort: \UserMemory.reputation, order: .reverse) private var users: [UserMemory]
+    @Query(sort: \UserMemory.reputation, order: .reverse) private var allUsers: [UserMemory]
     @State private var selectedUserID: PersistentIdentifier?
     @State private var search = ""
 
-    private var filteredUsers: [UserMemory] {
-        guard !search.isEmpty else { return users }
-        return users.filter {
-            $0.discordUserId.localizedCaseInsensitiveContains(search)
-                || $0.guildId.localizedCaseInsensitiveContains(search)
-                || $0.facts.contains { $0.localizedCaseInsensitiveContains(search) }
-        }
+    private var displayedUsers: [UserMemory] {
+        StoreFilters.filterUsers(allUsers, search: search)
     }
 
     private var selectedUser: UserMemory? {
-        filteredUsers.first { $0.persistentModelID == selectedUserID } ?? users.first { $0.persistentModelID == selectedUserID }
+        if let id = selectedUserID {
+            return displayedUsers.first { $0.persistentModelID == id }
+                ?? allUsers.first { $0.persistentModelID == id }
+        }
+        return nil
     }
 
     var body: some View {
         HStack(spacing: 0) {
             Group {
-                if filteredUsers.isEmpty {
+                if displayedUsers.isEmpty {
                     ContentUnavailableView(
-                        users.isEmpty ? "No users yet" : "No matches",
+                        allUsers.isEmpty ? "No users yet" : "No matches",
                         systemImage: "person.2",
-                        description: Text(
-                            users.isEmpty
-                                ? "Ingest a message on the Dashboard to create UserMemory rows via SocialBrain."
-                                : "Try a broader search."
-                        )
+                        description: Text(emptyDescription)
                     )
                 } else {
-                    List(filteredUsers, selection: $selectedUserID) { user in
+                    List(displayedUsers, selection: $selectedUserID) { user in
                         VStack(alignment: .leading) {
                             Text(user.discordUserId).font(.headline)
-                            Text("guild: \(user.guildId) · rep: \(String(format: "%.2f", user.reputation)) · \(user.interactionCount) interactions · \(user.reputationEvents.count) events")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            Text(
+                                "guild: \(user.guildId) · rep: \(String(format: "%.2f", user.reputation)) · \(user.interactionCount) interactions · \(user.reputationEvents.count) events"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
                         .tag(user.persistentModelID)
                     }
@@ -52,6 +49,7 @@ struct UsersView: View {
             Group {
                 if let user = selectedUser {
                     UserDetailView(user: user)
+                        .id(user.persistentModelID)
                 } else {
                     ContentUnavailableView("Select a user", systemImage: "person")
                 }
@@ -60,26 +58,52 @@ struct UsersView: View {
         }
         .navigationTitle("Users")
         .searchable(text: $search, prompt: "User, guild, or fact")
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    Task { await engine.socialBrain.warmCache() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .help("Refresh reputation cache")
+            }
+        }
+        .onChange(of: search) {
+            pruneSelectionIfNeeded()
+        }
+        .onChange(of: displayedUsers.count) {
+            pruneSelectionIfNeeded()
+        }
+    }
+
+    private var emptyDescription: String {
+        if allUsers.isEmpty {
+            return "Ingest a message on the Dashboard to create UserMemory rows via SocialBrain."
+        }
+        let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "Try a broader search."
+        }
+        return "No matches for \"\(trimmed)\"."
+    }
+
+    private func pruneSelectionIfNeeded() {
+        guard let id = selectedUserID else { return }
+        let stillVisible = displayedUsers.contains { $0.persistentModelID == id }
+        if !stillVisible {
+            selectedUserID = nil
+        }
     }
 }
 
 private struct UserDetailView: View {
     @Environment(AbbeyEngine.self) private var engine
     let user: UserMemory
-    @Query private var events: [ReputationEvent]
     @State private var reason = ""
     @State private var newFact = ""
 
-    init(user: UserMemory) {
-        self.user = user
-        let uid = user.discordUserId
-        let gid = user.guildId
-        _events = Query(
-            filter: #Predicate<ReputationEvent> {
-                $0.userId == uid && $0.guildId == gid
-            },
-            sort: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
+    private var events: [ReputationEvent] {
+        StoreFilters.sortedReputationEvents(for: user)
     }
 
     var body: some View {
@@ -187,7 +211,7 @@ private struct UserDetailView: View {
 
 #Preview("Users") {
     let engine = AbbeyStore.makePreviewEngine()
-    return UsersView()
+    UsersView()
         .environment(engine)
         .modelContainer(engine.modelContainer)
 }

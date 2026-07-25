@@ -22,9 +22,10 @@ package enum DestructiveAction: String, Sendable, CaseIterable {
 /// Actor-isolated publisher over `AsyncStream`. Multiple UI subscribers each get their
 /// own stream via `subscribe()` — this is a broadcast, not a single-consumer queue.
 package actor EventBus {
+    package init() {}
     private var continuations: [UUID: AsyncStream<AbbeyEvent>.Continuation] = [:]
 
-    func subscribe() -> AsyncStream<AbbeyEvent> {
+    package func subscribe() -> AsyncStream<AbbeyEvent> {
         let id = UUID()
         let (stream, continuation) = AsyncStream<AbbeyEvent>.makeStream()
         continuations[id] = continuation
@@ -34,7 +35,7 @@ package actor EventBus {
         return stream
     }
 
-    func publish(_ event: AbbeyEvent) {
+    package func publish(_ event: AbbeyEvent) {
         for continuation in continuations.values {
             continuation.yield(event)
         }

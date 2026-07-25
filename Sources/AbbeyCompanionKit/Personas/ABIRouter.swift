@@ -7,22 +7,22 @@ import AbbeyCore
 /// the reference draft's `static var current` made persona state a process-wide global,
 /// which is fine for a single-process bot but wrong for an app that could (in principle)
 /// host multiple engine instances in the same process (e.g. previews, tests).
-actor ABIRouter {
+package actor ABIRouter {
     private var current: any Persona
     private let eventBus: EventBus
 
-    init(eventBus: EventBus, initial: any Persona = AbbeyPersona()) {
+    package init(eventBus: EventBus, initial: any Persona = AbbeyPersona()) {
         self.eventBus = eventBus
         self.current = initial
     }
 
-    func currentPersona() -> any Persona {
+    package func currentPersona() -> any Persona {
         current
     }
 
     /// Routes by intent when the caller hasn't pinned a persona explicitly; falls back
     /// to whatever persona is currently active for anything not covered below.
-    func route(intent: IntentClassifier.Intent) -> any Persona {
+    package func route(intent: IntentClassifier.Intent) -> any Persona {
         switch intent {
         case .modRequest, .command:
             return AvivaPersona()
@@ -33,7 +33,7 @@ actor ABIRouter {
         }
     }
 
-    func setPersona(named name: String) async {
+    package func setPersona(named name: String) async {
         let resolved: any Persona
         switch name.lowercased() {
         case "aviva": resolved = AvivaPersona()

@@ -12,7 +12,7 @@ package struct PersonaResponse: Sendable {
     package var personaName: String
 }
 
-protocol Persona: Sendable {
+package protocol Persona: Sendable {
     var name: String { get }
     var systemPrompt: String { get }
     func respond(to input: String, context: PersonaContext, inference: InferenceRouter) async -> PersonaResponse

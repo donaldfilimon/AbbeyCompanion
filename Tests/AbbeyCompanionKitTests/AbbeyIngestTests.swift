@@ -4,17 +4,17 @@ import Testing
 import AbbeyCore
 import AbbeyCompanionKit
 
-@Suite("AbbeyCompanionKit", .serialized)
+@Suite("AbbeyCompanionKit Ingest", .serialized)
 @MainActor
-struct AbbeyCompanionKitTests {
-    private let channel = "ch-test"
-    private let guild = "guild-test"
-    private let author = "user-test"
+struct AbbeyIngestTests {
+    private let channel = AbbeyKitTestSupport.channel
+    private let guild = AbbeyKitTestSupport.guild
+    private let author = AbbeyKitTestSupport.author
 
     @Test("greeting ingest sets intent and usually produces a reply")
     func greetingIngest() async throws {
-        let engine = try makeEngine()
-        try await withTestConfig {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
             var reply: PersonaResponse?
             for _ in 0..<20 {
                 reply = await engine.ingestMessage(
@@ -27,7 +27,7 @@ struct AbbeyCompanionKitTests {
                 if engine.lastReplySkippedReason?.contains("cooldown") == true { break }
             }
             #expect(engine.lastIntent == .greeting)
-            let stored = try messageCount(in: engine)
+            let stored = try AbbeyKitTestSupport.messageCount(in: engine)
             #expect(stored >= 1)
             if let reply {
                 #expect(!reply.text.isEmpty)
@@ -39,8 +39,8 @@ struct AbbeyCompanionKitTests {
 
     @Test("remember stores a user fact even when DQN ignores")
     func memoryStoresFact() async throws {
-        let engine = try makeEngine()
-        try await withTestConfig {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
             _ = await engine.ingestMessage(
                 content: "remember I like Zig",
                 channelId: channel,
@@ -48,15 +48,15 @@ struct AbbeyCompanionKitTests {
                 authorId: author
             )
             #expect(engine.lastIntent == .memoryStore)
-            let facts = try userFacts(in: engine, userId: author, guildId: guild)
+            let facts = try AbbeyKitTestSupport.userFacts(in: engine, userId: author, guildId: guild)
             #expect(facts.contains("I like Zig"))
         }
     }
 
     @Test("slash !help and !rep return deterministic replies")
     func slashCommands() async throws {
-        let engine = try makeEngine()
-        try await withTestConfig {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
             let help = await engine.ingestMessage(
                 content: "!help",
                 channelId: channel,
@@ -78,8 +78,8 @@ struct AbbeyCompanionKitTests {
 
     @Test("exportJSON / importJSON round-trips messages and facts")
     func exportImportRoundTrip() async throws {
-        let source = try makeEngine()
-        try await withTestConfig {
+        let source = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
             _ = await source.ingestMessage(
                 content: "remember export me",
                 channelId: channel,
@@ -89,19 +89,19 @@ struct AbbeyCompanionKitTests {
             let data = try source.exportJSON()
             #expect(!data.isEmpty)
 
-            let dest = try makeEngine()
+            let dest = try AbbeyKitTestSupport.makeEngine()
             let counts = try dest.importJSON(data)
             #expect(counts.messages >= 1)
             #expect(counts.users >= 1)
-            let facts = try userFacts(in: dest, userId: author, guildId: guild)
+            let facts = try AbbeyKitTestSupport.userFacts(in: dest, userId: author, guildId: guild)
             #expect(facts.contains("export me"))
         }
     }
 
     @Test("reply cooldown arms and skips subsequent replies")
     func replyCooldown() async throws {
-        let engine = try makeEngine()
-        try await withTestConfig(cooldownSeconds: 120) {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig(cooldownSeconds: 120) {
             await engine.scheduler.markReplied(userId: "cooldown-user", guildId: guild)
             let remaining = await engine.scheduler.cooldownRemaining(
                 userId: "cooldown-user",
@@ -109,7 +109,6 @@ struct AbbeyCompanionKitTests {
             )
             #expect(remaining > 100)
 
-            // DQN ignore is checked before cooldown; retry until a non-ignore turn.
             var sawCooldownSkip = false
             for _ in 0..<60 {
                 let second = await engine.ingestMessage(
@@ -131,8 +130,8 @@ struct AbbeyCompanionKitTests {
 
     @Test("DQN selects an action on non-slash ingest")
     func dqnSelectsAction() async throws {
-        let engine = try makeEngine()
-        try await withTestConfig {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
             _ = await engine.ingestMessage(
                 content: "what is Abbey?",
                 channelId: channel,
@@ -146,8 +145,8 @@ struct AbbeyCompanionKitTests {
 
     @Test("batch transcript replay ingests non-comment lines")
     func batchReplay() async throws {
-        let engine = try makeEngine()
-        try await withTestConfig {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
             let transcript = """
             # setup
             hey abbey
@@ -163,15 +162,15 @@ struct AbbeyCompanionKitTests {
             )
             #expect(count == 3)
             #expect(engine.lastBatchIngestCount == 3)
-            let stored = try messageCount(in: engine)
+            let stored = try AbbeyKitTestSupport.messageCount(in: engine)
             #expect(stored >= 3)
         }
     }
 
     @Test("SwiftData relationships link messages and reputation events")
     func swiftDataRelationships() async throws {
-        let engine = try makeEngine()
-        try await withTestConfig {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
             _ = await engine.ingestMessage(
                 content: "hey there",
                 channelId: channel,
@@ -189,10 +188,78 @@ struct AbbeyCompanionKitTests {
         }
     }
 
+    @Test("StoreFilters user search matches userId guildId and facts")
+    func userSearchFilter() throws {
+        let zigUser = UserMemory(discordUserId: "donald", guildId: "dev-guild", facts: ["ships Zig"])
+        let other = UserMemory(discordUserId: "alice", guildId: "other-guild", facts: ["likes Swift"])
+        let users = [zigUser, other]
+
+        #expect(StoreFilters.filterUsers(users, search: "donald").count == 1)
+        #expect(StoreFilters.filterUsers(users, search: "dev-guild").count == 1)
+        #expect(StoreFilters.filterUsers(users, search: "zig").count == 1)
+        #expect(StoreFilters.filterUsers(users, search: "").count == 2)
+        #expect(StoreFilters.filterUsers(users, search: "nomatch").isEmpty)
+    }
+
+    @Test("StoreFilters channel filter returns exact channel rows")
+    func channelFilterHelper() throws {
+        let general = GuildMessage(
+            discordMessageId: "m1",
+            channelId: "general",
+            guildId: guild,
+            authorId: author,
+            content: "hi"
+        )
+        let mods = GuildMessage(
+            discordMessageId: "m2",
+            channelId: "mods",
+            guildId: guild,
+            authorId: author,
+            content: "mod talk"
+        )
+        let all = [general, mods]
+
+        #expect(StoreFilters.filterMessages(all, channelFilter: "general", search: "").count == 1)
+        #expect(StoreFilters.filterMessages(all, channelFilter: "general", search: "").first?.channelId == "general")
+        #expect(StoreFilters.filterMessages(all, channelFilter: "", search: "").count == 2)
+        #expect(StoreFilters.filterMessages(all, channelFilter: "missing", search: "").isEmpty)
+    }
+
+    @Test("reputation events grow on repeated ingest without recreating engine")
+    func liveReputationEvents() async throws {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
+            _ = await engine.ingestMessage(
+                content: "hello",
+                channelId: channel,
+                guildId: guild,
+                authorId: author
+            )
+            let firstCount = try AbbeyKitTestSupport.reputationEventCount(
+                in: engine, userId: author, guildId: guild
+            )
+            #expect(firstCount >= 1)
+
+            _ = await engine.ingestMessage(
+                content: "hello again",
+                channelId: channel,
+                guildId: guild,
+                authorId: author
+            )
+            let secondCount = try AbbeyKitTestSupport.reputationEventCount(
+                in: engine, userId: author, guildId: guild
+            )
+            #expect(secondCount > firstCount)
+
+            let user = try AbbeyKitTestSupport.fetchUser(in: engine, userId: author, guildId: guild)
+            #expect(StoreFilters.sortedReputationEvents(for: user).count == secondCount)
+        }
+    }
+
     @Test("reaction reward credits stored policy once")
     func reactionReward() async throws {
-        let engine = try makeEngine()
-        try await withTestConfig {
+        let engine = try AbbeyKitTestSupport.makeEngine()
+        try await AbbeyKitTestSupport.withTestConfig {
             for _ in 0..<25 {
                 _ = await engine.ingestMessage(
                     content: "hello there friend",
@@ -200,7 +267,7 @@ struct AbbeyCompanionKitTests {
                     guildId: guild,
                     authorId: author
                 )
-                if let message = try firstPolicyMessage(in: engine) {
+                if let message = try AbbeyKitTestSupport.firstPolicyMessage(in: engine) {
                     let ok = await engine.applyReaction(to: message, reward: 1)
                     #expect(ok)
                     let again = await engine.applyReaction(to: message, reward: 1)
@@ -210,55 +277,5 @@ struct AbbeyCompanionKitTests {
             }
             Issue.record("expected a message with an attached DQN policy")
         }
-    }
-
-    // MARK: - Helpers
-
-    private func makeEngine() throws -> AbbeyEngine {
-        let container = try AbbeyStore.makeInMemoryContainer()
-        let checkpoint = FileManager.default.temporaryDirectory
-            .appendingPathComponent("abbey-kit-tests-\(UUID().uuidString).json")
-        return AbbeyEngine(modelContainer: container, dqnCheckpointURL: checkpoint)
-    }
-
-    private func firstPolicyMessage(in engine: AbbeyEngine) throws -> GuildMessage? {
-        let context = ModelContext(engine.modelContainer)
-        let rows = try context.fetch(FetchDescriptor<GuildMessage>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
-        return rows.first(where: \.hasPolicy)
-    }
-
-    private func withTestConfig(
-        cooldownSeconds: Double = 0,
-        _ body: () async throws -> Void
-    ) async throws {
-        let config = AppConfig.shared
-        let savedCooldown = config.replyCooldownSeconds
-        let savedInference = config.inferenceMode
-        let savedConfirm = config.confirmationRequiredForDestructiveActions
-        let savedStrict = config.useStrictIntentClassification
-        config.replyCooldownSeconds = cooldownSeconds
-        config.inferenceMode = .deterministicFloor
-        config.confirmationRequiredForDestructiveActions = false
-        config.useStrictIntentClassification = false
-        defer {
-            config.replyCooldownSeconds = savedCooldown
-            config.inferenceMode = savedInference
-            config.confirmationRequiredForDestructiveActions = savedConfirm
-            config.useStrictIntentClassification = savedStrict
-        }
-        try await body()
-    }
-
-    private func messageCount(in engine: AbbeyEngine) throws -> Int {
-        let context = ModelContext(engine.modelContainer)
-        return try context.fetchCount(FetchDescriptor<GuildMessage>())
-    }
-
-    private func userFacts(in engine: AbbeyEngine, userId: String, guildId: String) throws -> [String] {
-        let context = ModelContext(engine.modelContainer)
-        let descriptor = FetchDescriptor<UserMemory>(
-            predicate: #Predicate { $0.discordUserId == userId && $0.guildId == guildId }
-        )
-        return try context.fetch(descriptor).first?.facts ?? []
     }
 }

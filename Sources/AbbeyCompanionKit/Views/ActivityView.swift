@@ -66,7 +66,7 @@ struct ActivityView: View {
 
 #Preview("Activity") {
     let engine = AbbeyStore.makePreviewEngine()
-    return ActivityView()
+    ActivityView()
         .environment(engine)
         .modelContainer(engine.modelContainer)
 }

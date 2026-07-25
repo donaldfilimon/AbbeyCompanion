@@ -3,21 +3,22 @@ import SwiftData
 import Observation
 import AbbeyCore
 
-/// The single object the SwiftUI layer talks to. Owns the `ModelContainer` and every
-/// actor described in the Engine/ and Inference/ folders.
+/// Thin orchestrator: wires EventBus, SocialBrain, DQN, Scheduler, ConfirmationGate, personas, inference.
+/// Persistence and slash commands live in dedicated types.
 @Observable
 @MainActor
 package final class AbbeyEngine {
     package let modelContainer: ModelContainer
     package let config = AppConfig.shared
     package let metrics = EngineMetrics()
+    package let persistence: AbbeyPersistence
 
     let eventBus: EventBus
     let socialBrain: SocialBrain
     let dqnAgent: DQNAgent
     package let scheduler: AbbeyScheduler
     let confirmationGate: ConfirmationGate
-    let personaRouter: ABIRouter
+    package let personaRouter: ABIRouter
     let inferenceRouter: InferenceRouter
     var equityEngine = EquityResearchEngine()
 
@@ -32,12 +33,15 @@ package final class AbbeyEngine {
     package private(set) var lastBatchIngestCount: Int = 0
     /// Ring buffer of recent bus events for the Dashboard live feed.
     package private(set) var recentEvents: [String] = []
+    /// Active pinned persona name (updated on `.personaSwitched`); drives AI assistant context refresh.
+    package private(set) var activePersonaName: String = AbbeyPersona().name
 
     private var eventListenerTask: Task<Void, Never>?
     private let dqnCheckpointURL: URL
 
     package init(modelContainer: ModelContainer, dqnCheckpointURL: URL? = nil) {
         self.modelContainer = modelContainer
+        self.persistence = AbbeyPersistence(modelContainer: modelContainer)
         self.dqnCheckpointURL = dqnCheckpointURL ?? Self.defaultDQNCheckpointURL()
 
         let bus = EventBus()
@@ -128,6 +132,8 @@ package final class AbbeyEngine {
             metrics.recordMessageIngested()
         case .reputationChanged:
             metrics.recordReputationEvent()
+        case .personaSwitched(let name):
+            activePersonaName = name
         case .destructiveActionRequested:
             confirmationTick += 1
         case .destructiveActionConfirmed:
@@ -179,19 +185,13 @@ package final class AbbeyEngine {
 
         let inboundMessageId = UUID().uuidString
         do {
-            let writeContext = ModelContext(modelContainer)
-            let channel = upsertChannelContext(in: writeContext, channelId: channelId, guildId: guildId)
-            writeContext.insert(
-                GuildMessage(
-                    discordMessageId: inboundMessageId,
-                    channelId: channelId,
-                    guildId: guildId,
-                    authorId: authorId,
-                    content: trimmed,
-                    channel: channel
-                )
+            try persistence.insertInboundMessage(
+                messageId: inboundMessageId,
+                content: trimmed,
+                channelId: channelId,
+                guildId: guildId,
+                authorId: authorId
             )
-            try writeContext.save()
         } catch {
             succeeded = false
         }
@@ -199,9 +199,9 @@ package final class AbbeyEngine {
         await eventBus.publish(.messageIngested(channelId: channelId, guildId: guildId, authorId: authorId))
 
         let reputationBefore = await socialBrain.reputation(userId: authorId, guildId: guildId)
-        var userFacts = fetchUserFacts(userId: authorId, guildId: guildId)
-        let channelSummary = fetchChannelSummary(channelId: channelId)
-        let channelActivity = fetchChannelMessageCount(channelId: channelId)
+        var userFacts = persistence.fetchUserFacts(userId: authorId, guildId: guildId)
+        let channelSummary = persistence.fetchChannelSummary(channelId: channelId)
+        let channelActivity = persistence.fetchChannelMessageCount(channelId: channelId)
 
         let intent = config.useStrictIntentClassification
             ? IntentClassifier.classifyStrict(trimmed)
@@ -209,15 +209,14 @@ package final class AbbeyEngine {
         lastIntent = intent
 
         if intent == .personaSwitch {
-            await applyPersonaSwitchHint(from: trimmed)
+            await AbbeySlashCommands.applyPersonaSwitchHint(from: trimmed, personaRouter: personaRouter)
         }
         if intent == .memoryStore {
-            let fact = Self.extractMemoryFact(from: trimmed)
+            let fact = AbbeySlashCommands.extractMemoryFact(from: trimmed)
             await socialBrain.rememberFact(userId: authorId, guildId: guildId, fact: fact)
-            userFacts = fetchUserFacts(userId: authorId, guildId: guildId)
+            userFacts = persistence.fetchUserFacts(userId: authorId, guildId: guildId)
         }
 
-        // Chat-driven moderation: `!kick user reason` etc.
         if intent == .modRequest, let parsed = IntentClassifier.parseModCommand(trimmed) {
             let kind = DestructiveAction(rawValue: parsed.kind) ?? .kick
             let brain = socialBrain
@@ -233,14 +232,25 @@ package final class AbbeyEngine {
                 text: "Moderation \(parsed.kind) for \(parsed.target) routed through ConfirmationGate.",
                 personaName: persona.name
             )
-            await persistReply(response, channelId: channelId, guildId: guildId)
+            persistence.persistReply(response, channelId: channelId, guildId: guildId)
             lastReply = response
             logInteraction(command: "ingest:modRequest", userId: authorId, guildId: guildId, succeeded: succeeded, started: started)
             return response
         }
 
-        if intent == .command, let slash = await handleSlashCommand(trimmed, authorId: authorId, guildId: guildId) {
-            await persistReply(slash, channelId: channelId, guildId: guildId)
+        if intent == .command,
+           let slash = await AbbeySlashCommands.handle(
+               trimmed,
+               authorId: authorId,
+               guildId: guildId,
+               personaRouter: personaRouter,
+               socialBrain: socialBrain,
+               scheduler: scheduler,
+               config: config,
+               dqnStepCount: dqnStepCount,
+               mirrorSnapshot: { [persistence] in try persistence.mirrorSnapshot() }
+           ) {
+            persistence.persistReply(slash, channelId: channelId, guildId: guildId)
             lastReply = slash
             logInteraction(command: "ingest:command", userId: authorId, guildId: guildId, succeeded: succeeded, started: started)
             return slash
@@ -254,22 +264,21 @@ package final class AbbeyEngine {
             isReply: false,
             timestamp: .now,
             channelMessageCountInWindow: channelActivity,
-            authorInteractionCount: userFacts.count,
+            authorInteractionCount: persistence.fetchUserInteractionCount(userId: authorId, guildId: guildId),
             isDirectMessage: false
         )
         let state = SentimentAnalyzer.projectToNetworkInput(state18)
         let actionIndex = await dqnAgent.selectAction(state: state)
         let dqnAction = DQNAction(raw: actionIndex)
         lastDQNAction = dqnAction
-        attachPolicy(to: inboundMessageId, state: state, action: actionIndex)
+        persistence.attachPolicy(to: inboundMessageId, state: state, action: actionIndex)
         await dqnAgent.remember(Experience(state: state, action: actionIndex, reward: Float(intent.quality), nextState: state, done: true))
-        await dqnAgent.learn(batchSize: 8)
+        await dqnAgent.learn(batchSize: config.dqnBatchSize)
         dqnStepCount = await dqnAgent.stepCount
         dqnExperienceCount = await dqnAgent.experienceCount
         await persistDQNCheckpoint()
         await socialBrain.recordInteraction(userId: authorId, guildId: guildId, quality: intent.quality)
 
-        // Cooldown outranks DQN ignore so the UI/skip reason stays accurate.
         if await scheduler.isCoolingDown(userId: authorId, guildId: guildId) {
             lastReplySkippedReason = "Reply cooldown active for \(authorId) in \(guildId)."
             logInteraction(command: "ingest:cooldown", userId: authorId, guildId: guildId, succeeded: succeeded, started: started)
@@ -309,171 +318,41 @@ package final class AbbeyEngine {
             response = await persona.respond(to: trimmed, context: personaContext, inference: inferenceRouter)
         }
 
-        await persistReply(response, channelId: channelId, guildId: guildId)
+        persistence.persistReply(response, channelId: channelId, guildId: guildId)
         await scheduler.markReplied(userId: authorId, guildId: guildId)
         lastReply = response
         logInteraction(command: "ingest:\(intent.rawValue):\(dqnAction.label)", userId: authorId, guildId: guildId, succeeded: succeeded, started: started)
         return response
     }
 
-    private func persistReply(_ response: PersonaResponse, channelId: String, guildId: String) async {
-        do {
-            let replyContext = ModelContext(modelContainer)
-            let channel = upsertChannelContext(in: replyContext, channelId: channelId, guildId: guildId, incrementCount: false)
-            replyContext.insert(
-                GuildMessage(
-                    discordMessageId: UUID().uuidString,
-                    channelId: channelId,
-                    guildId: guildId,
-                    authorId: "abbey:\(response.personaName.lowercased())",
-                    content: response.text,
-                    channel: channel
-                )
-            )
-            try replyContext.save()
-        } catch {
-            // Reply still surfaces via lastReply.
-        }
-    }
-
     package func logInteraction(command: String, userId: String, guildId: String, succeeded: Bool, started: ContinuousClock.Instant) {
-        let elapsed = started.duration(to: .now)
-        let ms = Double(elapsed.components.seconds) * 1000
-            + Double(elapsed.components.attoseconds) / 1e15
-        let context = ModelContext(modelContainer)
-        context.insert(
-            InteractionLog(
-                commandName: command,
-                userId: userId,
-                guildId: guildId,
-                succeeded: succeeded,
-                latencyMs: ms
-            )
-        )
-        try? context.save()
-    }
-
-    private func applyPersonaSwitchHint(from text: String) async {
-        let lower = text.lowercased()
-        if lower.contains("aviva") {
-            await personaRouter.setPersona(named: "aviva")
-        } else if lower.contains("abi") {
-            await personaRouter.setPersona(named: "abi")
-        } else if lower.contains("abbey") {
-            await personaRouter.setPersona(named: "abbey")
-        }
-    }
-
-    /// Handles non-mod slash/bang commands: help, rep, persona, status, consolidate.
-    private func handleSlashCommand(_ text: String, authorId: String, guildId: String) async -> PersonaResponse? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("!") || trimmed.hasPrefix("/") else { return nil }
-        let body = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = body.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        guard let verb = parts.first?.lowercased() else { return nil }
-        let persona = await personaRouter.currentPersona()
-
-        switch verb {
-        case "help", "commands":
-            return PersonaResponse(
-                text: """
-                Commands: !help · !rep [user] · !persona [abbey|aviva|abi] · !status · !consolidate \
-                · !kick|!ban|!purge <user> [reason]
-                """,
-                personaName: persona.name
-            )
-        case "rep", "reputation":
-            let target = parts.count > 1 ? parts[1] : authorId
-            let rep = await socialBrain.reputation(userId: target, guildId: guildId)
-            return PersonaResponse(
-                text: "Reputation for \(target) in \(guildId): \(String(format: "%.3f", rep)).",
-                personaName: persona.name
-            )
-        case "persona":
-            if parts.count > 1 {
-                await personaRouter.setPersona(named: parts[1])
-            }
-            let active = await personaRouter.currentPersona()
-            return PersonaResponse(text: "Active persona: \(active.name).", personaName: active.name)
-        case "status":
-            let remaining = await scheduler.cooldownRemaining(userId: authorId, guildId: guildId)
-            let snap = (try? mirrorSnapshot()) ?? [:]
-            return PersonaResponse(
-                text: """
-                mode=\(config.operatingMode.rawValue) inference=\(config.inferenceMode.rawValue) \
-                persona=\(persona.name) dqnSteps=\(dqnStepCount) cooldown=\(String(format: "%.1f", remaining))s \
-                store=\(snap)
-                """,
-                personaName: persona.name
-            )
-        case "consolidate":
-            await scheduler.consolidateAllChannels()
-            return PersonaResponse(text: "Channel consolidation triggered.", personaName: persona.name)
-        default:
-            return nil
-        }
+        persistence.logInteraction(command: command, userId: userId, guildId: guildId, succeeded: succeeded, started: started)
     }
 
     package func deleteMessage(_ message: GuildMessage) {
-        let context = ModelContext(modelContainer)
-        let id = message.discordMessageId
-        let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.discordMessageId == id })
-        if let row = try? context.fetch(descriptor).first {
-            context.delete(row)
-            try? context.save()
-        }
+        persistence.deleteMessage(message)
     }
 
     package func clearChannel(channelId: String) {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.channelId == channelId })
-        if let rows = try? context.fetch(descriptor) {
-            for row in rows { context.delete(row) }
-            try? context.save()
-        }
+        persistence.clearChannel(channelId: channelId)
     }
 
     package func deleteChannelContext(channelId: String) {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<ChannelContext>(predicate: #Predicate { $0.channelId == channelId })
-        if let row = try? context.fetch(descriptor).first {
-            context.delete(row)
-            try? context.save()
-        }
+        persistence.deleteChannelContext(channelId: channelId)
     }
 
     package func clearActivityLogs() {
-        let context = ModelContext(modelContainer)
-        try? context.delete(model: InteractionLog.self)
-        try? context.save()
+        persistence.clearActivityLogs()
     }
 
     /// Wipes all SwiftData rows (keeps AppConfig / UserDefaults).
     package func resetLocalStore() throws {
-        let context = ModelContext(modelContainer)
-        try context.delete(model: GuildMessage.self)
-        try context.delete(model: UserMemory.self)
-        try context.delete(model: ChannelContext.self)
-        try context.delete(model: ReputationEvent.self)
-        try context.delete(model: InteractionLog.self)
-        try context.delete(model: EquityIdea.self)
-        try context.save()
+        try persistence.resetLocalStore()
         recentEvents.removeAll()
         lastReply = nil
         lastIntent = nil
         lastDQNAction = nil
         Task { await socialBrain.warmCache() }
-    }
-
-    static func extractMemoryFact(from text: String) -> String {
-        let lower = text.lowercased()
-        if let range = lower.range(of: "remember ") {
-            return String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let range = lower.range(of: "note that ") {
-            return String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return text
     }
 
     package func performDestructiveAction(
@@ -494,14 +373,7 @@ package final class AbbeyEngine {
     }
 
     package func removeFact(userId: String, guildId: String, fact: String) {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<UserMemory>(
-            predicate: #Predicate { $0.discordUserId == userId && $0.guildId == guildId }
-        )
-        guard let user = try? context.fetch(descriptor).first else { return }
-        user.facts.removeAll { $0 == fact }
-        user.updatedAt = .now
-        try? context.save()
+        persistence.removeFact(userId: userId, guildId: guildId, fact: fact)
     }
 
     package func addFact(userId: String, guildId: String, fact: String) async {
@@ -536,31 +408,31 @@ package final class AbbeyEngine {
     /// Apply a delayed 👍/👎 reward to the DQN decision recorded on an inbound message.
     @discardableResult
     package func applyReaction(to message: GuildMessage, reward: Float) async -> Bool {
-        let context = ModelContext(modelContainer)
         let id = message.discordMessageId
-        let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.discordMessageId == id })
-        guard let row = try? context.fetch(descriptor).first,
-              row.hasPolicy,
-              !row.hasPolicyReward
-        else {
+        guard let credited = persistence.applyReactionReward(to: id, reward: reward) else {
             return false
         }
 
-        let state = row.policyState.map { Float($0) }
-        let action = row.policyAction
-        await dqnAgent.creditReward(state: state, action: action, reward: reward)
+        await dqnAgent.creditReward(state: credited.state, action: credited.action, reward: reward)
         dqnStepCount = await dqnAgent.stepCount
         dqnExperienceCount = await dqnAgent.experienceCount
         await persistDQNCheckpoint()
 
-        row.reactionCount += reward >= 0 ? 1 : -1
-        row.hasPolicyReward = true
-        try? context.save()
         recentEvents.insert(
             "[\(Date.now.formatted(date: .omitted, time: .shortened))] reaction \(reward >= 0 ? "+" : "")\(String(format: "%.1f", reward)) on \(id.prefix(8))",
             at: 0
         )
         return true
+    }
+
+    /// Push live DQN hyperparameters from AppConfig into the running agent.
+    package func syncDQNConfig() async {
+        await dqnAgent.updateHyperparameters(
+            gamma: Float(config.dqnGamma),
+            epsilon: Float(config.dqnEpsilon),
+            learningRate: Float(config.dqnLearningRate),
+            batchSize: config.dqnBatchSize
+        )
     }
 
     /// Wipe persisted DQN weights and reinitialize in-memory agent from seed 42.
@@ -585,190 +457,17 @@ package final class AbbeyEngine {
         }
     }
 
-    /// Mirror-mode helper: dump local store counts as a portable snapshot dictionary.
     package func mirrorSnapshot() throws -> [String: Int] {
-        let context = ModelContext(modelContainer)
-        return [
-            "guildMessages": try context.fetchCount(FetchDescriptor<GuildMessage>()),
-            "userMemories": try context.fetchCount(FetchDescriptor<UserMemory>()),
-            "channelContexts": try context.fetchCount(FetchDescriptor<ChannelContext>()),
-            "reputationEvents": try context.fetchCount(FetchDescriptor<ReputationEvent>()),
-            "interactionLogs": try context.fetchCount(FetchDescriptor<InteractionLog>()),
-            "equityIdeas": try context.fetchCount(FetchDescriptor<EquityIdea>())
-        ]
+        try persistence.mirrorSnapshot()
     }
 
-    /// Export a JSON document of messages + user memories for backup / mirror handoff.
     package func exportJSON() throws -> Data {
-        let context = ModelContext(modelContainer)
-        let messages = try context.fetch(FetchDescriptor<GuildMessage>(sortBy: [SortDescriptor(\.createdAt)]))
-        let users = try context.fetch(FetchDescriptor<UserMemory>())
-        let channels = try context.fetch(FetchDescriptor<ChannelContext>())
-
-        let doc = MirrorExportDocument(
-            messages: messages.map {
-                .init(
-                    discordMessageId: $0.discordMessageId,
-                    channelId: $0.channelId,
-                    guildId: $0.guildId,
-                    authorId: $0.authorId,
-                    content: $0.content,
-                    createdAt: $0.createdAt
-                )
-            },
-            users: users.map {
-                .init(
-                    discordUserId: $0.discordUserId,
-                    guildId: $0.guildId,
-                    facts: $0.facts,
-                    reputation: $0.reputation,
-                    interactionCount: $0.interactionCount
-                )
-            },
-            channels: channels.map {
-                .init(
-                    channelId: $0.channelId,
-                    guildId: $0.guildId,
-                    summary: $0.summary,
-                    messageCount: $0.messageCount
-                )
-            }
-        )
-        return try doc.encode()
+        try persistence.exportJSON()
     }
 
-    /// Import messages/users/channels from `exportJSON` output (skips duplicate message IDs).
     package func importJSON(_ data: Data) throws -> (messages: Int, users: Int, channels: Int) {
-        let doc = try MirrorExportDocument.decode(from: data)
-        let context = ModelContext(modelContainer)
-        var mCount = 0, uCount = 0, cCount = 0
-
-        for msg in doc.messages {
-            let id = msg.discordMessageId
-            let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.discordMessageId == id })
-            if (try? context.fetch(descriptor).first) != nil { continue }
-            let channel = upsertChannelContext(
-                in: context,
-                channelId: msg.channelId,
-                guildId: msg.guildId,
-                incrementCount: false
-            )
-            context.insert(
-                GuildMessage(
-                    discordMessageId: msg.discordMessageId,
-                    channelId: msg.channelId,
-                    guildId: msg.guildId,
-                    authorId: msg.authorId,
-                    content: msg.content,
-                    createdAt: msg.createdAt,
-                    channel: channel
-                )
-            )
-            mCount += 1
-        }
-        for user in doc.users {
-            let uid = user.discordUserId
-            let gid = user.guildId
-            let descriptor = FetchDescriptor<UserMemory>(
-                predicate: #Predicate { $0.discordUserId == uid && $0.guildId == gid }
-            )
-            if let existing = try? context.fetch(descriptor).first {
-                existing.facts = Array(Set(existing.facts + user.facts))
-                existing.reputation = user.reputation
-                existing.interactionCount = max(existing.interactionCount, user.interactionCount)
-                existing.updatedAt = .now
-            } else {
-                context.insert(
-                    UserMemory(
-                        discordUserId: user.discordUserId,
-                        guildId: user.guildId,
-                        facts: user.facts,
-                        reputation: user.reputation,
-                        interactionCount: user.interactionCount
-                    )
-                )
-                uCount += 1
-            }
-        }
-        for channel in doc.channels {
-            let cid = channel.channelId
-            let descriptor = FetchDescriptor<ChannelContext>(predicate: #Predicate { $0.channelId == cid })
-            if let existing = try? context.fetch(descriptor).first {
-                if channel.summary.count > existing.summary.count { existing.summary = channel.summary }
-                existing.messageCount = max(existing.messageCount, channel.messageCount)
-                existing.updatedAt = .now
-            } else {
-                context.insert(
-                    ChannelContext(
-                        channelId: channel.channelId,
-                        guildId: channel.guildId,
-                        summary: channel.summary,
-                        messageCount: channel.messageCount
-                    )
-                )
-                cCount += 1
-            }
-        }
-        try context.save()
+        let counts = try persistence.importJSON(data)
         Task { await socialBrain.warmCache() }
-        return (mCount, uCount, cCount)
-    }
-
-    private func attachPolicy(to messageId: String, state: [Float], action: Int) {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<GuildMessage>(predicate: #Predicate { $0.discordMessageId == messageId })
-        guard let row = try? context.fetch(descriptor).first else { return }
-        row.policyState = state.map { Double($0) }
-        row.policyAction = action
-        try? context.save()
-    }
-
-    @discardableResult
-    private func upsertChannelContext(
-        in context: ModelContext,
-        channelId: String,
-        guildId: String,
-        incrementCount: Bool = true
-    ) -> ChannelContext {
-        let descriptor = FetchDescriptor<ChannelContext>(
-            predicate: #Predicate { $0.channelId == channelId }
-        )
-        if let existing = try? context.fetch(descriptor).first {
-            if incrementCount { existing.messageCount += 1 }
-            existing.guildId = guildId
-            existing.updatedAt = .now
-            return existing
-        }
-        let created = ChannelContext(
-            channelId: channelId,
-            guildId: guildId,
-            messageCount: incrementCount ? 1 : 0
-        )
-        context.insert(created)
-        return created
-    }
-
-    private func fetchChannelSummary(channelId: String) -> String {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<ChannelContext>(
-            predicate: #Predicate { $0.channelId == channelId }
-        )
-        return (try? context.fetch(descriptor).first?.summary) ?? ""
-    }
-
-    private func fetchChannelMessageCount(channelId: String) -> Int {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<ChannelContext>(
-            predicate: #Predicate { $0.channelId == channelId }
-        )
-        return (try? context.fetch(descriptor).first?.messageCount) ?? 0
-    }
-
-    private func fetchUserFacts(userId: String, guildId: String) -> [String] {
-        let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<UserMemory>(
-            predicate: #Predicate { $0.discordUserId == userId && $0.guildId == guildId }
-        )
-        return (try? context.fetch(descriptor).first?.facts) ?? []
+        return counts
     }
 }

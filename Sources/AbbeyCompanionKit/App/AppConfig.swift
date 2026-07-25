@@ -76,6 +76,22 @@ package final class AppConfig: @unchecked Sendable {
     package var useAbstractiveConsolidation: Bool {
         didSet { defaults.set(useAbstractiveConsolidation, forKey: Keys.abstractiveConsolidation) }
     }
+    // ABBEY_DQN_GAMMA — DQN discount factor
+    package var dqnGamma: Double {
+        didSet { defaults.set(dqnGamma, forKey: Keys.dqnGamma) }
+    }
+    // ABBEY_DQN_EPSILON — DQN exploration rate
+    package var dqnEpsilon: Double {
+        didSet { defaults.set(dqnEpsilon, forKey: Keys.dqnEpsilon) }
+    }
+    // ABBEY_DQN_LEARNING_RATE — DQN learning rate
+    package var dqnLearningRate: Double {
+        didSet { defaults.set(dqnLearningRate, forKey: Keys.dqnLearningRate) }
+    }
+    // ABBEY_DQN_BATCH_SIZE — DQN minibatch size
+    package var dqnBatchSize: Int {
+        didSet { defaults.set(dqnBatchSize, forKey: Keys.dqnBatchSize) }
+    }
 
     private enum Keys {
         static let operatingMode = "ABBEY_OPERATING_MODE"
@@ -90,6 +106,10 @@ package final class AppConfig: @unchecked Sendable {
         static let equityModuleEnabled = "ABBEY_EQUITY_MODULE_ENABLED"
         static let strictIntent = "ABBEY_USE_STRICT_INTENT"
         static let abstractiveConsolidation = "ABBEY_ABSTRACTIVE_CONSOLIDATION"
+        static let dqnGamma = "ABBEY_DQN_GAMMA"
+        static let dqnEpsilon = "ABBEY_DQN_EPSILON"
+        static let dqnLearningRate = "ABBEY_DQN_LEARNING_RATE"
+        static let dqnBatchSize = "ABBEY_DQN_BATCH_SIZE"
     }
 
     package init(defaults: UserDefaults = .standard) {
@@ -109,5 +129,13 @@ package final class AppConfig: @unchecked Sendable {
         self.equityModuleEnabled = defaults.object(forKey: Keys.equityModuleEnabled) as? Bool ?? true
         self.useStrictIntentClassification = defaults.object(forKey: Keys.strictIntent) as? Bool ?? false
         self.useAbstractiveConsolidation = defaults.object(forKey: Keys.abstractiveConsolidation) as? Bool ?? false
+        let gamma = defaults.double(forKey: Keys.dqnGamma)
+        self.dqnGamma = gamma > 0 ? gamma : 0.99
+        let epsilon = defaults.double(forKey: Keys.dqnEpsilon)
+        self.dqnEpsilon = epsilon > 0 ? epsilon : 0.1
+        let lr = defaults.double(forKey: Keys.dqnLearningRate)
+        self.dqnLearningRate = lr > 0 ? lr : 0.001
+        let batch = defaults.integer(forKey: Keys.dqnBatchSize)
+        self.dqnBatchSize = batch > 0 ? batch : 8
     }
 }

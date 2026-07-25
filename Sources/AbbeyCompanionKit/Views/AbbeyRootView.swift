@@ -8,6 +8,8 @@ package enum SidebarSection: String, CaseIterable, Identifiable {
     case activity = "Activity"
     case personas = "Personas"
     case equity = "Equity Research"
+    case statistics = "Statistics"
+    case aiAssistant = "AI Assistant"
 
     package var id: String { rawValue }
 
@@ -20,17 +22,44 @@ package enum SidebarSection: String, CaseIterable, Identifiable {
         case .activity: return "list.bullet.rectangle"
         case .personas: return "sparkles"
         case .equity: return "chart.line.uptrend.xyaxis"
+        case .statistics: return "chart.bar.xaxis.ascending"
+        case .aiAssistant: return "cpu"
+        }
+    }
+
+    package var shortcut: KeyEquivalent {
+        switch self {
+        case .dashboard: return "1"
+        case .users: return "2"
+        case .channels: return "3"
+        case .messages: return "4"
+        case .activity: return "5"
+        case .personas: return "6"
+        case .equity: return "7"
+        case .statistics: return "8"
+        case .aiAssistant: return "9"
         }
     }
 }
 
-package struct ContentView: View {
+/// Root companion shell. AI Assistant slot is injected by the app target so kit stays free of CoreAITools.
+package struct AbbeyRootView<AIAssistant: View>: View {
     @Environment(AbbeyEngine.self) private var engine
-    @State private var selection: SidebarSection? = .dashboard
+    @State private var selection: SidebarSection?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var pendingConfirmation: ConfirmationGate.PendingRequest?
+    @State private var showGlobalSearch = false
+    @AppStorage("abbey.sidebarSelection") private var savedSelection = "dashboard"
 
-    package init() {}
+    private let aiAssistant: AIAssistant
+
+    package init(
+        initialSelection: SidebarSection = .dashboard,
+        @ViewBuilder aiAssistant: () -> AIAssistant
+    ) {
+        _selection = State(initialValue: initialSelection)
+        self.aiAssistant = aiAssistant()
+    }
 
     package var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -40,6 +69,7 @@ package struct ContentView: View {
                 }) { section in
                     Label(section.rawValue, systemImage: section.systemImage)
                         .tag(section)
+                        .keyboardShortcut(section.shortcut, modifiers: [.command])
                 }
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
@@ -86,10 +116,19 @@ package struct ContentView: View {
                     PersonaSwitcherView()
                 case .equity:
                     EquityResearchView()
+                case .statistics:
+                    StatisticsView()
+                case .aiAssistant:
+                    aiAssistant
                 }
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .onChange(of: selection) { _, newValue in
+            if let section = newValue {
+                savedSelection = section.rawValue
+            }
+        }
         .onChange(of: engine.confirmationTick) {
             Task { await presentPendingConfirmation() }
         }
@@ -101,17 +140,54 @@ package struct ContentView: View {
         .sheet(item: $pendingConfirmation) { request in
             ConfirmationSheetView(request: request)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .abbeyExportRequested)) { _ in
+            handleExport()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .abbeyImportRequested)) { _ in
+            handleImport()
+        }
+        .inspector(isPresented: $showGlobalSearch) {
+            GlobalSearchView(engine: engine, isPresented: $showGlobalSearch)
+        }
     }
 
     private func presentPendingConfirmation() async {
         let queue = await engine.confirmationGate.queue
         pendingConfirmation = queue.first
     }
+
+    private func handleExport() {
+        guard let data = try? engine.exportJSON() else { return }
+        _ = DocumentIO.runJSONExport(data: data)
+    }
+
+    private func handleImport() {
+        guard let data = DocumentIO.runJSONImport() else { return }
+        _ = try? engine.importJSON(data)
+    }
 }
 
-#Preview("Content") {
+package struct AbbeyAIAssistantPlaceholder: View {
+    package init() {}
+    package var body: some View {
+        Text("AI Assistant is hosted by the app shell.")
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+extension AbbeyRootView where AIAssistant == AbbeyAIAssistantPlaceholder {
+    /// Preview / kit-only convenience without an AI assistant host.
+    package init(initialSelection: SidebarSection = .dashboard) {
+        self.init(initialSelection: initialSelection) {
+            AbbeyAIAssistantPlaceholder()
+        }
+    }
+}
+
+#Preview("Abbey Root") {
     let engine = AbbeyStore.makePreviewEngine()
-    return ContentView()
+    AbbeyRootView()
         .environment(engine)
         .modelContainer(engine.modelContainer)
 }

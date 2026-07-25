@@ -14,7 +14,7 @@ struct FoundationModelsProvider: InferenceProvider {
 
     func generate(_ request: InferenceRequest) async throws -> InferenceResult {
         #if canImport(FoundationModels)
-        guard #available(macOS 26.0, iOS 26.0, *) else {
+        guard #available(macOS 27.0, *) else {
             throw InferenceError.providerUnavailable(.onDevice)
         }
 

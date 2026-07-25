@@ -6,3 +6,6 @@ DerivedData/
 .DS_Store
 *.swp
 *.orig
+.codex/
+.cursor/
+.claude/
