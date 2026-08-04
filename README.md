@@ -31,7 +31,8 @@ CI: `.github/workflows/ci.yml` (macos-26 + Xcode 27 when available).
 | DQN | 18→8 projection; ignore / reply / escalate; **checkpoint persistence**; learn batch 8 |
 | Reactions | Messages 👍/👎 credits delayed reward against stored policy (once per turn) |
 | Batch | Dashboard **transcript replay** (multi-line; `#` comments skipped) |
-| Users | Reputation history; **facts CRUD**; purge / kick / ban via ConfirmationGate |
+| Users | Reputation history (live relationship query); **search** user/guild/fact; facts CRUD; mod actions |
+| Messages | **Channel chip filter** (`@Query` + Capsule chips); search; 👍/👎 policy rewards |
 | Handoff | Seed demo · JSON export/import · autocomplete · live event feed |
 | Settings | Remote probe · Foundation Models status · strict intent · **reset DQN weights** |
 

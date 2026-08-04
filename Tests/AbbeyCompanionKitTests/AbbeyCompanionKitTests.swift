@@ -189,6 +189,70 @@ struct AbbeyCompanionKitTests {
         }
     }
 
+    @Test("StoreFilters user search matches userId guildId and facts")
+    func userSearchFilter() throws {
+        let zigUser = UserMemory(discordUserId: "donald", guildId: "dev-guild", facts: ["ships Zig"])
+        let other = UserMemory(discordUserId: "alice", guildId: "other-guild", facts: ["likes Swift"])
+        let users = [zigUser, other]
+
+        #expect(StoreFilters.filterUsers(users, search: "donald").count == 1)
+        #expect(StoreFilters.filterUsers(users, search: "dev-guild").count == 1)
+        #expect(StoreFilters.filterUsers(users, search: "zig").count == 1)
+        #expect(StoreFilters.filterUsers(users, search: "").count == 2)
+        #expect(StoreFilters.filterUsers(users, search: "nomatch").isEmpty)
+    }
+
+    @Test("StoreFilters channel filter returns exact channel rows")
+    func channelFilterHelper() throws {
+        let general = GuildMessage(
+            discordMessageId: "m1",
+            channelId: "general",
+            guildId: guild,
+            authorId: author,
+            content: "hi"
+        )
+        let mods = GuildMessage(
+            discordMessageId: "m2",
+            channelId: "mods",
+            guildId: guild,
+            authorId: author,
+            content: "mod talk"
+        )
+        let all = [general, mods]
+
+        #expect(StoreFilters.filterMessages(all, channelFilter: "general", search: "").count == 1)
+        #expect(StoreFilters.filterMessages(all, channelFilter: "general", search: "").first?.channelId == "general")
+        #expect(StoreFilters.filterMessages(all, channelFilter: "", search: "").count == 2)
+        #expect(StoreFilters.filterMessages(all, channelFilter: "missing", search: "").isEmpty)
+    }
+
+    @Test("reputation events grow on repeated ingest without recreating engine")
+    func liveReputationEvents() async throws {
+        let engine = try makeEngine()
+        try await withTestConfig {
+            _ = await engine.ingestMessage(
+                content: "hello",
+                channelId: channel,
+                guildId: guild,
+                authorId: author
+            )
+            let firstCount = try reputationEventCount(in: engine, userId: author, guildId: guild)
+            #expect(firstCount >= 1)
+
+            _ = await engine.ingestMessage(
+                content: "hello again",
+                channelId: channel,
+                guildId: guild,
+                authorId: author
+            )
+            let secondCount = try reputationEventCount(in: engine, userId: author, guildId: guild)
+            #expect(secondCount > firstCount)
+
+            let user = try fetchUser(in: engine, userId: author, guildId: guild)
+            #expect(StoreFilters.sortedReputationEvents(for: user).count == secondCount)
+        }
+    }
+
     @Test("reaction reward credits stored policy once")
     func reactionReward() async throws {
         let engine = try makeEngine()
@@ -260,5 +324,20 @@ struct AbbeyCompanionKitTests {
             predicate: #Predicate { $0.discordUserId == userId && $0.guildId == guildId }
         )
         return try context.fetch(descriptor).first?.facts ?? []
+    }
+
+    private func fetchUser(in engine: AbbeyEngine, userId: String, guildId: String) throws -> UserMemory {
+        let context = ModelContext(engine.modelContainer)
+        let descriptor = FetchDescriptor<UserMemory>(
+            predicate: #Predicate { $0.discordUserId == userId && $0.guildId == guildId }
+        )
+        guard let user = try context.fetch(descriptor).first else {
+            throw NSError(domain: "AbbeyCompanionKitTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "user not found"])
+        }
+        return user
+    }
+
+    private func reputationEventCount(in engine: AbbeyEngine, userId: String, guildId: String) throws -> Int {
+        try StoreFilters.sortedReputationEvents(for: fetchUser(in: engine, userId: userId, guildId: guildId)).count
     }
 }
