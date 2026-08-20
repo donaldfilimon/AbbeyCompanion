@@ -1,3 +1,31 @@
+> ## ⚠️ RETIRED — 2026-08-20
+>
+> **This repository is retired. Its code now lives in `~/dev/active/CoreAIAssistant`.**
+>
+> AbbeyCompanion was a fork of CoreAIAssistant: its `CoreAITools` target shared 40 files
+> by identical relative path with CoreAIAssistant's app core (28 byte-identical, and of the
+> 12 that diverged, 9 were newer on the CoreAIAssistant side). On 2026-08-20 CoreAIAssistant
+> was declared canonical and this repo's unique work was ported into it:
+>
+> | Was here | Now lives in CoreAIAssistant as |
+> |---|---|
+> | `Sources/AbbeyCore` (7 files) + `Tests/AbbeyCoreTests` (12 tests) | `AbbeyCore` target + `.library` product, ported verbatim |
+> | `Sources/AbbeyCompanionKit` (45 files) + `Tests/AbbeyCompanionKitTests` (27 tests) | `AbbeyCompanionKit` target + `.library` product, ported verbatim |
+> | `CoreAITools`' `ConversationStoreBootstrap` and `AssistantRootView` | cherry-picked into the `CoreAIAssistant` executable target |
+> | `CoreAITools`' `ConversationFileChangeTracker` and `GitRunner.approvedRun` | cherry-picked into the `CoreAIAssistant` executable target |
+>
+> Everything else in `CoreAITools` was either byte-identical to, a file-split of, or older
+> than CoreAIAssistant's copy, and was intentionally not carried over. All 43 of this repo's
+> `CoreAIToolsTests` were verified to be a strict subset of CoreAIAssistant's 60.
+>
+> **Do not fix bugs or add features here — do it in `~/dev/active/CoreAIAssistant`.**
+> Rationale and full port record:
+> `~/dev/active/CoreAIAssistant/docs/superpowers/specs/2026-08-20-abbeycompanion-canonicalization-design.md`
+>
+> The repo stays in `~/dev/archive/` as history. The text below describes it as it was.
+
+---
+
 # AbbeyCompanion
 
 Native macOS SwiftUI companion for Abbey Bot. **Swift 6.4** / SwiftData / SwiftUI —
