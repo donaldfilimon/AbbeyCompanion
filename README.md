@@ -55,7 +55,7 @@ swiftly use xcode     # once per clone — writes .swift-version (already presen
 swift build && swift test && swift run
 ```
 
-CI: `.github/workflows/ci.yml` (`macos-27` + Xcode 27).
+CI: `.github/workflows/ci.yml` (self-hosted macOS arm64 runner + Xcode 27 for same-repo events, `macos-27` for fork PRs; see `docs/SelfHostedRunner.md`).
 
 ## Feature map
 
