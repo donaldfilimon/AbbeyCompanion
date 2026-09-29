@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    # Custom label of the macOS arm64 runner registered to this repository.
+    - abbeycompanion
+    # GitHub-hosted macOS 27 image used by the fork-PR fallback job;
+    # actionlint 1.7.12 predates the label.
+    - macos-27

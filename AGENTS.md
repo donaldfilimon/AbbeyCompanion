@@ -82,8 +82,8 @@ Makefile                          # check / smoke / run → scripts/
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) on `macos-27`:
-1. Select Xcode 27
+GitHub Actions (`.github/workflows/ci.yml`). Same-repo pushes and PRs run `check` on the self-hosted macOS arm64 runner (label `abbeycompanion`, see `docs/SelfHostedRunner.md`); fork PRs run `check-hosted` on `macos-27`:
+1. Select Xcode 27 (self-hosted: sudo-free `DEVELOPER_DIR` export)
 2. `./scripts/check.sh` (build + all 3 test suites)
 
 Branch filter: `main` + `cursor/**`.

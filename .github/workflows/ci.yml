@@ -6,9 +6,59 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Build & Test
+    if: >
+      github.repository == 'donaldfilimon/AbbeyCompanion' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    # Trusted same-repo events run on the macOS arm64 self-hosted runner
+    # registered to this repository with the label abbeycompanion. It needs
+    # Xcode 27 (SwiftData macros ship only with Apple's toolchain). Fork PRs
+    # use the GitHub-hosted job below: never schedule untrusted code on the
+    # self-hosted machine. See docs/SelfHostedRunner.md.
+    runs-on: [self-hosted, macOS, ARM64, abbeycompanion]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        # Same Xcode search order as the hosted job, but sudo-free: export
+        # DEVELOPER_DIR for later steps instead of running `sudo xcode-select`,
+        # so the runner account never needs sudo and the host's global Xcode
+        # selection is left alone. scripts/lib.sh honors DEVELOPER_DIR.
+        run: |
+          for app in \
+            "/Applications/Xcode-27.0.0.app" \
+            "/Applications/Xcode-27.0.0-beta.4.app" \
+            "/Applications/Xcode-27.0.0-beta.app" \
+            "/Applications/Xcode.app"; do
+            if [ -d "$app/Contents/Developer" ]; then
+              export DEVELOPER_DIR="$app/Contents/Developer"
+              echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+              break
+            fi
+          done
+          unset TOOLCHAINS
+          xcode-select -p
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Swift build + test
+        run: ./scripts/check.sh
+
+  check-hosted:
+    name: Build & Test (GitHub-hosted, fork PRs)
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: macos-27
     timeout-minutes: 30
     steps:
